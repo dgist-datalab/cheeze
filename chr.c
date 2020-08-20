@@ -20,6 +20,7 @@ static struct file_operations cheeze_chr_fops;
 static struct cdev cheeze_chr_cdev;
 static struct class *cheeze_chr_class;
 static struct device *cheeze_chr_device;
+static DECLARE_WAIT_QUEUE_HEAD(cheeze_chr_wait);
 
 struct cheeze_chr_state {
 	struct semaphore sem;	/* Semaphore on the state structure */

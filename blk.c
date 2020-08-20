@@ -167,9 +167,6 @@ static void __cheeze_make_request(struct bio *bio, int rw)
 	offset = (bio->bi_iter.bi_sector & (SECTORS_PER_PAGE - 1)) <<
 	    SECTOR_SHIFT;
 
-	pr_info("%s: %s, index=%d, offset=%d, bi_size=%d\n",
-		 __func__, rw ? "write" : "read", index, offset, bio->bi_iter.bi_size);
-
 	if (offset) {
 		pr_err("%s %d: invalid offset. "
 		       "(bio->bi_iter.bi_sector, index, offset) = (%llu, %d, %d)\n",
@@ -195,9 +192,8 @@ static void __cheeze_make_request(struct bio *bio, int rw)
 			goto out_error;
 		}
 
-		pr_debug("%s %d: (rw, index, bvec.bv_len) = "
-			 "(%d, %d, %d)\n",
-			 __func__, __LINE__, rw, index, bvec.bv_len);
+		pr_info("%s: %s, index=%d, offset=%d, bv_len=%d\n",
+			 __func__, rw ? "write" : "read", index, offset, bvec.bv_len);
 
 		ret = cheeze_bvec_rw(&bvec, index, bio, rw);
 		if (ret < 0) {
