@@ -59,6 +59,7 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 	struct page *page;
 	struct cheeze_req *req;
 	unsigned char *user_mem, *swap_header_page_mem;
+	unsigned long id;
 	phys_addr_t addr;
 
 //	mutex_lock(&mutex);
@@ -76,11 +77,15 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 	page = bvec->bv_page;
 
 	user_mem = kmap_atomic(page);
-	addr = virt_to_phys(user_mem);
+	// addr = virt_to_phys(user_mem);
 
-	pr_info("addr: 0x%llx (%lld)\n", addr, addr);
+	// pr_info("addr: 0x%llx (%lld)\n", addr, addr);
 
-	cheeze_push(OP_READ, index, offset, bvec->bv_len, addr);
+	id = cheeze_push(OP_READ, index, offset, bvec->bv_len, user_mem);
+
+	while (reqs[id].acked == 0) {
+		msleep(5);
+	}
 
 #if 0
 	if (index == 0 && swap_header_page) {
@@ -123,11 +128,11 @@ static int cheeze_bvec_write(struct bio_vec *bvec,
 	page = bvec->bv_page;
 
 	user_mem = kmap_atomic(page);
-	addr = virt_to_phys(user_mem);
+//	addr = virt_to_phys(user_mem);
 
-	pr_info("addr: 0x%llx (%lld)\n", addr, addr);
+//	pr_info("addr: 0x%llx (%lld)\n", addr, addr);
 
-	cheeze_push(OP_WRITE, index, offset, bvec->bv_len, addr);
+	cheeze_push(OP_WRITE, index, offset, bvec->bv_len, user_mem);
 
 /*
 	if (swap_header_page == NULL)

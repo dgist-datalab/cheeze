@@ -16,10 +16,8 @@
 #define CHEEZE_CHR_MAJOR 235
 #define CHEEZE_CHR_MINOR 11
 
-static struct file_operations cheeze_chr_fops;
 static struct cdev cheeze_chr_cdev;
 static struct class *cheeze_chr_class;
-static struct device *cheeze_chr_device;
 static DECLARE_WAIT_QUEUE_HEAD(cheeze_chr_wait);
 
 #if 0
@@ -96,8 +94,37 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 	return count;
 }
 
-static struct file_operations cheeze_chr_fops = {
+static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
+			    size_t count, loff_t *ppos)
+{
+	struct cheeze_req tmp, *req;
+//	unsigned long id;
+
+/*
+	if (unlikely(count != sizeof(id))) {
+		pr_err("read: size mismatch: %ld vs %ld\n",
+			count, sizeof(id));
+		return -EINVAL;
+	}
+*/
+	pr_info("write: count=%lu\n", count);
+	if (unlikely(copy_from_user(&tmp, buf, sizeof(tmp))))
+		return -EFAULT;
+
+	pr_info("%s: id = %lu\n", __func__, tmp.id);
+	req = reqs + tmp.id;
+
+	if (unlikely(copy_from_user(req->addr, buf + sizeof(struct cheeze_req), req->size)))
+		return -EFAULT;
+
+	req->acked = 1;
+
+	return (ssize_t)count;
+}
+
+static const struct file_operations cheeze_chr_fops = {
 	.read = cheeze_chr_read,
+	.write = cheeze_chr_write,
 	.open = cheeze_chr_open,
 	.release = cheeze_chr_release,
 };
@@ -112,6 +139,7 @@ void cheeze_chr_cleanup_module(void)
 
 int cheeze_chr_init_module(void)
 {
+	struct device *cheeze_chr_device;
 	int result;
 
 	cheeze_chr_class = class_create(THIS_MODULE, "cheeze_chr");

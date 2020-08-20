@@ -13,23 +13,26 @@
 
 struct cheeze_req {
 	int rw;
+	int acked;
 	unsigned int index;
 	unsigned int offset;
 	unsigned int size;
-	unsigned int addr;
+	unsigned long id;
+	void *addr;
 };
 
 // blk.c
+// extern struct mutex cheeze_mutex;
 void cheeze_chr_cleanup_module(void);
 int cheeze_chr_init_module(void);
 
 // queue.c
 extern struct cheeze_req *reqs;
-void cheeze_push(const int rw,
+unsigned long cheeze_push(const int rw,
 		 const unsigned int index,
 		 const unsigned int offset,
 		 const unsigned int size,
-		 const unsigned int addr);
+		 void *addr);
 struct cheeze_req *cheeze_pop(void);
 
 #endif

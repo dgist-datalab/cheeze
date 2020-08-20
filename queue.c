@@ -8,8 +8,7 @@
 
 #include "cheeze.h"
 
-static int front, rear;
-static int qsize;
+static unsigned long front, rear, qsize;
 
 // Protect with lock
 struct cheeze_req *reqs = NULL;
@@ -20,17 +19,17 @@ static inline bool empty(void) {
 }
 
 // Lock must be held and freed before and after push()
-void cheeze_push(const int rw,
+unsigned long cheeze_push(const int rw,
 		 const unsigned int index,
 		 const unsigned int offset,
 		 const unsigned int size,
-		 const unsigned int addr) {
+		 void *addr) {
 	struct cheeze_req *req;
 
 	while (unlikely((rear + 1) % CHEEZE_QUEUE_SIZE == front)) {
 		// Full
 		pr_err("%s: queue is full\n", __func__);
-		mdelay(100);
+		msleep(100);
 	}
 
 	mutex_lock(&mutex);
@@ -39,13 +38,25 @@ void cheeze_push(const int rw,
 	rear = (rear + 1) % CHEEZE_QUEUE_SIZE;
 
 	req = reqs + rear;
+	req->acked = 0;
 	req->rw = rw;
 	req->index = index;
 	req->offset = offset;
 	req->size = size;
 	req->addr = addr;
+	req->id = rear;
+
+	pr_info("req[%lu]\n"
+		"  rw=%d\n"
+		"  index=%u\n"
+		"  offset=%u\n"
+		"  size=%u\n"
+		"  addr=%p\n",
+			rear, rw, index, offset, size, addr);
 
 	mutex_unlock(&mutex);
+
+	return rear;
 }
 
 struct cheeze_req *cheeze_pop(void) {
