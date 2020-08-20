@@ -16,6 +16,8 @@
 #include <linux/blkdev.h>
 #include <linux/delay.h>
 
+#include "cheeze.h"
+
 #define SECTOR_SHIFT		9
 #define SECTOR_SIZE		(1 << SECTOR_SHIFT)
 #define SECTORS_PER_PAGE_SHIFT	(PAGE_SHIFT - SECTOR_SHIFT)
@@ -391,6 +393,8 @@ static int __init cheeze_init(void)
 		goto free_devices;
 	}
 
+	cheeze_chr_init_module();
+
 	return 0;
 
 free_devices:
@@ -401,6 +405,8 @@ out:
 
 static void __exit cheeze_exit(void)
 {
+	cheeze_chr_cleanup_module();
+
 	destroy_device();
 
 	unregister_blkdev(cheeze_major, "cheeze");
