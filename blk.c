@@ -34,7 +34,6 @@ static int cheeze_major, i;
 static struct gendisk *cheeze_disk;
 static u64 cheeze_disksize;
 static struct page *swap_header_page;
-static DEFINE_MUTEX(mutex);
 
 /*
  * Check if request is within bounds and aligned on cheeze logical blocks.
@@ -54,9 +53,11 @@ static inline int cheeze_valid_io_request(struct bio *bio)
 }
 
 static int cheeze_bvec_read(struct bio_vec *bvec,
-			    u32 index, struct bio *bio)
+			    unsigned int index, unsigned int offset,
+			    struct bio *bio)
 {
 	struct page *page;
+	struct cheeze_req *req;
 	unsigned char *user_mem, *swap_header_page_mem;
 	phys_addr_t addr;
 
@@ -79,6 +80,8 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 
 	pr_info("addr: 0x%llx (%lld)\n", addr, addr);
 
+	cheeze_push(OP_READ, index, offset, bvec->bv_len, addr);
+
 #if 0
 	if (index == 0 && swap_header_page) {
 		swap_header_page_mem = kmap_atomic(swap_header_page);
@@ -94,7 +97,7 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 	}
 #endif
 
-	msleep(1000 * 10);
+	//msleep(1000 * 10);
 
 	kunmap_atomic(user_mem);
 	flush_dcache_page(page);
@@ -109,44 +112,49 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 }
 
 static int cheeze_bvec_write(struct bio_vec *bvec,
-			     u32 index, struct bio *bio)
+			     unsigned int index, unsigned int offset,
+			     struct bio *bio)
 {
 	struct page *page;
+	struct cheeze_req *req;
 	unsigned char *user_mem, *swap_header_page_mem;
-
-#if 0
-	if (unlikely(index != 0)) {
-		pr_err("tried to write outside of swap header\n");
-		return -EIO;
-	}
+	phys_addr_t addr;
 
 	page = bvec->bv_page;
 
 	user_mem = kmap_atomic(page);
+	addr = virt_to_phys(user_mem);
+
+	pr_info("addr: 0x%llx (%lld)\n", addr, addr);
+
+	cheeze_push(OP_WRITE, index, offset, bvec->bv_len, addr);
+
+/*
 	if (swap_header_page == NULL)
 		swap_header_page = alloc_page(GFP_KERNEL | GFP_NOIO);
 	swap_header_page_mem = kmap_atomic(swap_header_page);
 	memcpy(swap_header_page_mem, user_mem, PAGE_SIZE);
 	kunmap_atomic(swap_header_page_mem);
+*/
 	kunmap_atomic(user_mem);
-#endif
 
 	return 0;
 }
 
 static int cheeze_bvec_rw(struct bio_vec *bvec,
-			  u32 index, struct bio *bio, int rw)
+			  unsigned int index, unsigned int offset,
+			  struct bio *bio, int rw)
 {
 	if (rw == READ)
-		return cheeze_bvec_read(bvec, index, bio);
+		return cheeze_bvec_read(bvec, index, offset, bio);
 	else
-		return cheeze_bvec_write(bvec, index, bio);
+		return cheeze_bvec_write(bvec, index, offset, bio);
 }
 
 static void __cheeze_make_request(struct bio *bio, int rw)
 {
 	int offset, ret;
-	u32 index;
+	unsigned int index;
 	struct bio_vec bvec;
 	struct bvec_iter iter;
 
@@ -195,7 +203,7 @@ static void __cheeze_make_request(struct bio *bio, int rw)
 		pr_info("%s: %s, index=%d, offset=%d, bv_len=%d\n",
 			 __func__, rw ? "write" : "read", index, offset, bvec.bv_len);
 
-		ret = cheeze_bvec_rw(&bvec, index, bio, rw);
+		ret = cheeze_bvec_rw(&bvec, index, offset, bio, rw);
 		if (ret < 0) {
 			if (ret != -ENOSPC)
 				pr_err("%s %d: cheeze_bvec_rw failed."
@@ -389,10 +397,23 @@ static int __init cheeze_init(void)
 		goto free_devices;
 	}
 
-	cheeze_chr_init_module();
+	ret = cheeze_chr_init_module();
+	if (ret)
+		goto destroy_devices;
+
+	reqs = kzalloc(sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE, GFP_KERNEL);
+	if (reqs == NULL) {
+		pr_err("%s %d: Unable to allocate memory for cheeze_req\n", __func__, __LINE__);
+		ret = -ENOMEM;
+		goto nomem;
+	}
 
 	return 0;
 
+nomem:
+	cheeze_chr_cleanup_module();
+destroy_devices:
+	destroy_device();
 free_devices:
 	unregister_blkdev(cheeze_major, "cheeze");
 out:
@@ -401,6 +422,8 @@ out:
 
 static void __exit cheeze_exit(void)
 {
+	kfree(reqs);
+
 	cheeze_chr_cleanup_module();
 
 	destroy_device();

@@ -22,6 +22,7 @@ static struct class *cheeze_chr_class;
 static struct device *cheeze_chr_device;
 static DECLARE_WAIT_QUEUE_HEAD(cheeze_chr_wait);
 
+#if 0
 struct cheeze_chr_state {
 	struct semaphore sem;	/* Semaphore on the state structure */
 
@@ -31,10 +32,11 @@ struct cheeze_chr_state {
 
 	char *buf;
 };
+#endif
 
 static int cheeze_chr_open(struct inode *inode, struct file *filp)
 {
-	struct cheeze_chr_state *state;
+//	struct cheeze_chr_state *state;
 
 	int num = iminor(inode);
 
@@ -45,23 +47,23 @@ static int cheeze_chr_open(struct inode *inode, struct file *filp)
 	if (num != CHEEZE_CHR_MINOR)
 		return -ENODEV;
 
-	state = kmalloc(sizeof(struct cheeze_chr_state), GFP_KERNEL);
-	if (!state)
-		return -ENOMEM;
+//	state = kmalloc(sizeof(struct cheeze_chr_state), GFP_KERNEL);
+//	if (!state)
+//		return -ENOMEM;
 
-	sema_init(&state->sem, 1);	/* Init semaphore as a mutex */
+//	sema_init(&state->sem, 1);	/* Init semaphore as a mutex */
 
-	filp->private_data = state;
+//	filp->private_data = state;
 
 	return 0;		/* Success */
 }
 
 static int cheeze_chr_release(struct inode *inode, struct file *filp)
 {
-	struct cheeze_chr_state *state = filp->private_data;
+//	struct cheeze_chr_state *state = filp->private_data;
 
-	kfree(state->buf);
-	kfree(state);
+//	kfree(state->buf);
+//	kfree(state);
 
 	return 0;
 }
@@ -69,8 +71,8 @@ static int cheeze_chr_release(struct inode *inode, struct file *filp)
 static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 			    loff_t * f_pos)
 {
-	struct cheeze_chr_state *state = filp->private_data;
-	ssize_t ret;
+//	struct cheeze_chr_state *state = filp->private_data;
+	struct cheeze_req *req;
 	int dobytes, k;
 	char *localbuf;
 
@@ -78,33 +80,20 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 	unsigned int j;
 	u8 *S;
 
-	if (down_interruptible(&state->sem))
-		return -ERESTARTSYS;
+//	if (unlikely(down_interruptible(&state->sem)))
+//		return -ERESTARTSYS;
 
-	while (count) {
-		localbuf = state->buf;
-
-		for (k = 0; k < dobytes; k++) {
-			i = (i + 1) & 0xff;
-			j = (j + S[i]) & 0xff;
-			*localbuf++ = S[(S[i] + S[j]) & 0xff];
-		}
-
-		if (copy_to_user(buf, state->buf, dobytes)) {
-			ret = -EFAULT;
-			goto out;
-		}
-
-		buf += dobytes;
-		count -= dobytes;
+	if (unlikely(count != sizeof(struct cheeze_req))) {
+		pr_err("read: size mismatch: %ld vs %ld\n",
+			count, sizeof(struct cheeze_req));
+		return -EINVAL;
 	}
 
-out:
-	state->i = i;
-	state->j = j;
+	if (unlikely(copy_to_user(buf, cheeze_pop(), count)))
+		return -EFAULT;
 
-	up(&state->sem);
-	return ret;
+//	up(&state->sem);
+	return count;
 }
 
 static struct file_operations cheeze_chr_fops = {
@@ -128,7 +117,7 @@ int cheeze_chr_init_module(void)
 	cheeze_chr_class = class_create(THIS_MODULE, "cheeze_chr");
 	if (IS_ERR(cheeze_chr_class)) {
 		result = PTR_ERR(cheeze_chr_class);
-		pr_warn("Failed to register class fastrng\n");
+		pr_warn("Failed to register class cheeze_chr\n");
 		goto error0;
 	}
 
