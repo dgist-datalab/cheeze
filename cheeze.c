@@ -14,6 +14,7 @@
 
 #include <linux/module.h>
 #include <linux/blkdev.h>
+#include <linux/delay.h>
 
 #define SECTOR_SHIFT		9
 #define SECTOR_SIZE		(1 << SECTOR_SHIFT)
@@ -27,10 +28,11 @@
 // cheeze is intentionally designed to expose 1 disk only
 
 /* Globals */
-static int cheeze_major;
+static int cheeze_major, i;
 static struct gendisk *cheeze_disk;
 static u64 cheeze_disksize;
 static struct page *swap_header_page;
+static DEFINE_MUTEX(mutex);
 
 /*
  * Check if request is within bounds and aligned on cheeze logical blocks.
@@ -54,7 +56,13 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 {
 	struct page *page;
 	unsigned char *user_mem, *swap_header_page_mem;
+	phys_addr_t addr;
 
+//	mutex_lock(&mutex);
+//	i++;
+
+//	pr_info("i: %d\n", i);
+//	mutex_unlock(&mutex);
 #if 0
 	if (unlikely(index != 0)) {
 		// pr_err("tried to read outside of swap header\n");
@@ -65,6 +73,11 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 	page = bvec->bv_page;
 
 	user_mem = kmap_atomic(page);
+	addr = virt_to_phys(user_mem);
+
+	pr_info("addr: 0x%llx (%lld)\n", addr, addr);
+
+#if 0
 	if (index == 0 && swap_header_page) {
 		swap_header_page_mem = kmap_atomic(swap_header_page);
 		memcpy(user_mem + bvec->bv_offset, swap_header_page_mem, bvec->bv_len);
@@ -77,8 +90,18 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 		// Do not allow memory dumps
 		memset(user_mem + bvec->bv_offset, 0, bvec->bv_len);
 	}
+#endif
+
+	msleep(1000 * 10);
+
 	kunmap_atomic(user_mem);
 	flush_dcache_page(page);
+
+	//udelay(500);
+
+//	mutex_lock(&mutex);
+//	i--;
+//	mutex_unlock(&mutex);
 
 	return 0;
 }
@@ -89,6 +112,7 @@ static int cheeze_bvec_write(struct bio_vec *bvec,
 	struct page *page;
 	unsigned char *user_mem, *swap_header_page_mem;
 
+#if 0
 	if (unlikely(index != 0)) {
 		pr_err("tried to write outside of swap header\n");
 		return -EIO;
@@ -103,6 +127,7 @@ static int cheeze_bvec_write(struct bio_vec *bvec,
 	memcpy(swap_header_page_mem, user_mem, PAGE_SIZE);
 	kunmap_atomic(swap_header_page_mem);
 	kunmap_atomic(user_mem);
+#endif
 
 	return 0;
 }
