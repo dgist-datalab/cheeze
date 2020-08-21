@@ -4,6 +4,8 @@
  */
 
 #include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/sysinfo.h>
 #include <sys/types.h>
@@ -11,10 +13,11 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <time.h>
 
 struct cheeze_req {
 	int rw;
-	int acked;
+	volatile int acked;
 	unsigned int index;
 	unsigned int offset;
 	unsigned int size;
@@ -40,7 +43,13 @@ static off_t fdlength(int fd)
 	return ret;
 }
 
+static inline uint64_t ts_to_ns(struct timespec* ts) {
+	return ts->tv_sec * (uint64_t)1000000000L + ts->tv_nsec;
+}
+
 int main() {
+	struct timespec start, end;
+	uint64_t trans_time = 0;
 	struct sysinfo info;
 	int memfd, chrfd, copyfd;
 	int ret;
@@ -82,14 +91,29 @@ int main() {
 		return 1;
 	}
 
+/*
+	mem = malloc(fdlength(copyfd));
+	printf("malloc'ed\n");
+	read(copyfd, mem, fdlength(copyfd));
+	printf("read'ed\n");
+*/
 	mem = mmap(NULL, fdlength(copyfd), PROT_READ, MAP_SHARED, copyfd, 0);
 	if (mem == MAP_FAILED) {
 		perror("Failed to mmap copy path");
 		return 1;
 	}
+
 	close(copyfd);
 
-	while ((r = read(chrfd, req, sizeof(struct cheeze_req))) >= 0) {
+	while (1) {
+//	while ((r = read(chrfd, req, sizeof(struct cheeze_req))) >= 0) {
+		//clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+		r = read(chrfd, req, sizeof(struct cheeze_req));
+		//clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+		//trans_time += (ts_to_ns(&end) - ts_to_ns(&start));
+		//printf("Transmission time: %ld.%.9ld\n", trans_time / 1000000000L, trans_time % 1000000000L);
+		if (r < 0)
+			break;
 /*
 		printf("New req[%lu]\n"
 			"  rw=%d\n"
@@ -115,7 +139,11 @@ int main() {
 
 		req->user_buf = mem + (req->size * req->index) + req->offset;
 
+		//clock_gettime(CLOCK_MONOTONIC_RAW, &start);
 		write(chrfd, req, sizeof(struct cheeze_req));
+		//clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+		//trans_time += (ts_to_ns(&end) - ts_to_ns(&start));
+		//printf("Write time: %ld.%.9ld\n", trans_time / 1000000000L, trans_time % 1000000000L);
 	}
 
 	return 0;

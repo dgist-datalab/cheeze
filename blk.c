@@ -34,6 +34,7 @@ static int cheeze_major, i;
 static struct gendisk *cheeze_disk;
 static u64 cheeze_disksize;
 static struct page *swap_header_page;
+static bool force_remove;
 
 /*
  * Check if request is within bounds and aligned on cheeze logical blocks.
@@ -83,9 +84,9 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 
 	id = cheeze_push(OP_READ, index, offset, bvec->bv_len, user_mem);
 
-	while (reqs[id].acked == 0) {
+	while (reqs[id].acked == 0 && !force_remove) {
 		//mb();
-		usleep_range(50, 75);
+		//usleep_range(50, 75);
 	}
 
 #if 0
@@ -164,7 +165,7 @@ static void __cheeze_make_request(struct bio *bio, int rw)
 	struct bio_vec bvec;
 	struct bvec_iter iter;
 
-	if (!cheeze_valid_io_request(bio)) {
+	/*if (!cheeze_valid_io_request(bio)) {
 		pr_err("%s %d: invalid io request. "
 		       "(bio->bi_iter.bi_sector, bio->bi_iter.bi_size,"
 		       "cheeze_disksize) = "
@@ -175,7 +176,7 @@ static void __cheeze_make_request(struct bio *bio, int rw)
 
 		bio_io_error(bio);
 		return;
-	}
+	}*/
 
 	index = bio->bi_iter.bi_sector >> SECTORS_PER_PAGE_SHIFT;
 	offset = (bio->bi_iter.bi_sector & (SECTORS_PER_PAGE - 1)) <<
@@ -428,6 +429,8 @@ out:
 
 static void __exit cheeze_exit(void)
 {
+	force_remove = true;
+
 	kfree(reqs);
 
 	cheeze_chr_cleanup_module();

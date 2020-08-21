@@ -28,8 +28,9 @@ unsigned long cheeze_push(const int rw,
 
 	while (unlikely((rear + 1) % CHEEZE_QUEUE_SIZE == front)) {
 		// Full
+		mb();
 		pr_err("%s: queue is full\n", __func__);
-		msleep(100);
+		//msleep(100);
 	}
 
 	mutex_lock(&mutex);
@@ -61,11 +62,11 @@ unsigned long cheeze_push(const int rw,
 
 struct cheeze_req *cheeze_pop(void) {
 	while (unlikely(empty())) {
-		//mb();
+		mb();
 		// Nothing to pop
 		//pr_err("%s: queue is empty\n", __func__);
 		//mdelay(100);
-		usleep_range(50, 75);
+		//usleep_range(50, 75);
 	}
 
 	mutex_lock(&mutex);

@@ -13,7 +13,7 @@
 
 struct cheeze_req {
 	int rw;
-	int acked;
+	volatile int acked;
 	unsigned int index;
 	unsigned int offset;
 	unsigned int size;
