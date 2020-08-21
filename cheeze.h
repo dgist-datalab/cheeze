@@ -6,7 +6,7 @@
 #ifndef __CHEEZE_H
 #define __CHEEZE_H
 
-#define CHEEZE_QUEUE_SIZE 256
+#define CHEEZE_QUEUE_SIZE 1024
 
 #define OP_READ 0
 #define OP_WRITE 1
