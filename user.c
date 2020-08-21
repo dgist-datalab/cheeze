@@ -23,19 +23,19 @@ struct cheeze_req {
 	void *user_buf;
 };
 
-#define COPY_TARGET "/mnt/home/arter97/todo"
+#define COPY_TARGET "/dev/vdb"
 
-static off64_t fdlength(int fd)
+static off_t fdlength(int fd)
 {
 	struct stat st;
-	off64_t cur, ret;
+	off_t cur, ret;
 
 	if (!fstat(fd, &st) && S_ISREG(st.st_mode))
 		return st.st_size;
 
-	cur = lseek64(fd, 0, SEEK_CUR);
-	ret = lseek64(fd, 0, SEEK_END);
-	lseek64(fd, cur, SEEK_SET);
+	cur = lseek(fd, 0, SEEK_CUR);
+	ret = lseek(fd, 0, SEEK_END);
+	lseek(fd, cur, SEEK_SET);
 
 	return ret;
 }
@@ -90,6 +90,7 @@ int main() {
 	close(copyfd);
 
 	while ((r = read(chrfd, req, sizeof(struct cheeze_req))) >= 0) {
+/*
 		printf("New req[%lu]\n"
 			"  rw=%d\n"
 			"  index=%u\n"
@@ -97,6 +98,7 @@ int main() {
 			"  size=%u\n"
 			"  addr=%p\n",
 				req->id, req->rw, req->index, req->offset, req->size, req->addr);
+*/
 
 		// printf("Before: ");
 		// memcpy(buf, mem + req->addr, req->size);
@@ -111,9 +113,9 @@ int main() {
 		// write(1, buf, req->size);
 		// printf("\n");
 
-		req->user_buf = mem + req->addr;
+		req->user_buf = mem + (req->size * req->index) + req->offset;
 
-		write(chrfd, buf, sizeof(struct cheeze_req) + req->size);
+		write(chrfd, req, sizeof(struct cheeze_req));
 	}
 
 	return 0;

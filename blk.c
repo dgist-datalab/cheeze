@@ -84,7 +84,8 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 	id = cheeze_push(OP_READ, index, offset, bvec->bv_len, user_mem);
 
 	while (reqs[id].acked == 0) {
-		msleep(5);
+		//mb();
+		usleep_range(50, 75);
 	}
 
 #if 0
@@ -105,7 +106,7 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 	//msleep(1000 * 10);
 
 	kunmap_atomic(user_mem);
-	flush_dcache_page(page);
+	flush_dcache_page(page); // Hmm? XXX
 
 	//udelay(500);
 
@@ -205,8 +206,8 @@ static void __cheeze_make_request(struct bio *bio, int rw)
 			goto out_error;
 		}
 
-		pr_info("%s: %s, index=%d, offset=%d, bv_len=%d\n",
-			 __func__, rw ? "write" : "read", index, offset, bvec.bv_len);
+		//pr_info("%s: %s, index=%d, offset=%d, bv_len=%d\n",
+		//	 __func__, rw ? "write" : "read", index, offset, bvec.bv_len);
 
 		ret = cheeze_bvec_rw(&bvec, index, offset, bio, rw);
 		if (ret < 0) {

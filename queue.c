@@ -46,7 +46,7 @@ unsigned long cheeze_push(const int rw,
 	req->addr = addr;
 	req->id = rear;
 
-	pr_info("req[%lu]\n"
+	pr_debug("req[%lu]\n"
 		"  rw=%d\n"
 		"  index=%u\n"
 		"  offset=%u\n"
@@ -61,9 +61,11 @@ unsigned long cheeze_push(const int rw,
 
 struct cheeze_req *cheeze_pop(void) {
 	while (unlikely(empty())) {
+		//mb();
 		// Nothing to pop
-		pr_err("%s: queue is empty\n", __func__);
-		mdelay(100);
+		//pr_err("%s: queue is empty\n", __func__);
+		//mdelay(100);
+		usleep_range(50, 75);
 	}
 
 	mutex_lock(&mutex);

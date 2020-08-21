@@ -100,20 +100,19 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 	struct cheeze_req req;
 //	unsigned long id;
 
-/*
-	if (unlikely(count != sizeof(id))) {
+	if (unlikely(count != sizeof(req))) {
 		pr_err("read: size mismatch: %ld vs %ld\n",
-			count, sizeof(id));
+			count, sizeof(req));
 		return -EINVAL;
 	}
-*/
-	pr_info("write: count=%lu\n", count);
+
+//	pr_info("write: count=%lu\n", count);
 	if (unlikely(copy_from_user(&req, buf, sizeof(req))))
 		return -EFAULT;
 
-	pr_info("%s: id = %lu\n", __func__, req.id);
+//	pr_info("%s: id = %lu\n", __func__, req.id);
 
-	if (unlikely(copy_from_user(req.addr, buf + sizeof(struct cheeze_req), req.size)))
+	if (unlikely(copy_from_user(req.addr, req.user_buf, req.size)))
 		return -EFAULT;
 
 	reqs[req.id].acked = 1;
