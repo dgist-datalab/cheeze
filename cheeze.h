@@ -19,6 +19,7 @@ struct cheeze_req {
 	unsigned int size;
 	unsigned long id;
 	void *addr;
+	void *user_buf;
 };
 
 // blk.c

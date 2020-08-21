@@ -97,7 +97,7 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 			    size_t count, loff_t *ppos)
 {
-	struct cheeze_req tmp, *req;
+	struct cheeze_req req;
 //	unsigned long id;
 
 /*
@@ -108,16 +108,15 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 	}
 */
 	pr_info("write: count=%lu\n", count);
-	if (unlikely(copy_from_user(&tmp, buf, sizeof(tmp))))
+	if (unlikely(copy_from_user(&req, buf, sizeof(req))))
 		return -EFAULT;
 
-	pr_info("%s: id = %lu\n", __func__, tmp.id);
-	req = reqs + tmp.id;
+	pr_info("%s: id = %lu\n", __func__, req.id);
 
-	if (unlikely(copy_from_user(req->addr, buf + sizeof(struct cheeze_req), req->size)))
+	if (unlikely(copy_from_user(req.addr, buf + sizeof(struct cheeze_req), req.size)))
 		return -EFAULT;
 
-	req->acked = 1;
+	reqs[req.id].acked = 1;
 
 	return (ssize_t)count;
 }

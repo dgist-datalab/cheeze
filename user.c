@@ -20,9 +20,25 @@ struct cheeze_req {
 	unsigned int size;
 	unsigned long id;
 	void *addr;
+	void *user_buf;
 };
 
 #define COPY_TARGET "/mnt/home/arter97/todo"
+
+static off64_t fdlength(int fd)
+{
+	struct stat st;
+	off64_t cur, ret;
+
+	if (!fstat(fd, &st) && S_ISREG(st.st_mode))
+		return st.st_size;
+
+	cur = lseek64(fd, 0, SEEK_CUR);
+	ret = lseek64(fd, 0, SEEK_END);
+	lseek64(fd, cur, SEEK_SET);
+
+	return ret;
+}
 
 int main() {
 	struct sysinfo info;
@@ -66,6 +82,13 @@ int main() {
 		return 1;
 	}
 
+	mem = mmap(NULL, fdlength(copyfd), PROT_READ, MAP_SHARED, copyfd, 0);
+	if (mem == MAP_FAILED) {
+		perror("Failed to mmap copy path");
+		return 1;
+	}
+	close(copyfd);
+
 	while ((r = read(chrfd, req, sizeof(struct cheeze_req))) >= 0) {
 		printf("New req[%lu]\n"
 			"  rw=%d\n"
@@ -80,13 +103,15 @@ int main() {
 		// write(1, buf, req->size);
 
 		// read(copyfd, mem + req->addr, req->size);
-		read(copyfd, buf + sizeof(struct cheeze_req), req->size);
+		// read(copyfd, buf + sizeof(struct cheeze_req), req->size);
 		// memcpy(mem + req->addr, buf, req->size);
 
 		// printf("\nAfter: ");
 		// memcpy(buf, mem + req->addr, req->size);
 		// write(1, buf, req->size);
 		// printf("\n");
+
+		req->user_buf = mem + req->addr;
 
 		write(chrfd, buf, sizeof(struct cheeze_req) + req->size);
 	}
