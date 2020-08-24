@@ -62,8 +62,16 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 	if (unlikely(copy_from_user(&req, buf, sizeof(req))))
 		return -EFAULT;
 
-	if (unlikely(copy_from_user(req.addr, req.user_buf, req.size)))
-		return -EFAULT;
+	switch (req.rw) {
+	case OP_READ:
+		if (unlikely(copy_from_user(req.addr, req.user_buf, req.size)))
+			return -EFAULT;
+		break;
+	case OP_WRITE:
+		if (unlikely(copy_to_user(req.user_buf, req.addr, req.size)))
+			return -EFAULT;
+		break;
+	}
 
 	reqs[req.id].acked = 1;
 

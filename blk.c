@@ -34,7 +34,6 @@ static int cheeze_major, i;
 static struct gendisk *cheeze_disk;
 static u64 cheeze_disksize;
 static struct page *swap_header_page;
-static bool force_remove;
 
 struct class *cheeze_chr_class;
 
@@ -86,7 +85,7 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 
 	id = cheeze_push(OP_READ, index, offset, bvec->bv_len, user_mem);
 
-	while (reqs[id].acked == 0 && !force_remove) {
+	while (reqs[id].acked == 0) {
 		//mb();
 		//usleep_range(50, 75);
 	}
@@ -127,6 +126,7 @@ static int cheeze_bvec_write(struct bio_vec *bvec,
 	struct page *page;
 	struct cheeze_req *req;
 	unsigned char *user_mem, *swap_header_page_mem;
+	unsigned long id;
 	phys_addr_t addr;
 
 	page = bvec->bv_page;
@@ -136,8 +136,12 @@ static int cheeze_bvec_write(struct bio_vec *bvec,
 
 //	pr_info("addr: 0x%llx (%lld)\n", addr, addr);
 
-	cheeze_push(OP_WRITE, index, offset, bvec->bv_len, user_mem);
+	id = cheeze_push(OP_WRITE, index, offset, bvec->bv_len, user_mem);
 
+	while (reqs[id].acked == 0) {
+		//mb();
+		//usleep_range(50, 75);
+	}
 /*
 	if (swap_header_page == NULL)
 		swap_header_page = alloc_page(GFP_KERNEL | GFP_NOIO);
@@ -440,8 +444,6 @@ out:
 
 static void __exit cheeze_exit(void)
 {
-	force_remove = true;
-
 	kfree(reqs);
 
 	cheeze_chr_cleanup_module();
