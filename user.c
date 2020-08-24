@@ -15,9 +15,6 @@
 #include <unistd.h>
 #include <time.h>
 
-#define OP_READ 0
-#define OP_WRITE 1
-
 struct cheeze_req {
 	int rw;
 	volatile int acked;
@@ -29,7 +26,7 @@ struct cheeze_req {
 	void *user_buf;
 };
 
-#define COPY_TARGET "/tmp/vdb"
+#define COPY_TARGET "/dev/vdb"
 
 static off_t fdlength(int fd)
 {
@@ -56,11 +53,12 @@ int main() {
 	struct sysinfo info;
 	int memfd, chrfd, copyfd;
 	int ret;
-	char *devmem, *fmem;
+	char *mem;
 	char buf[4096 * 4];
 	ssize_t r;
 	struct cheeze_req *req = (struct cheeze_req *)buf;
 
+/*
 	ret = sysinfo(&info);
 	if (ret < 0) {
 		perror("Failed to query sysinfo()");
@@ -73,12 +71,13 @@ int main() {
 		return 1;
 	}
 
-	devmem = mmap(NULL, info.totalram, PROT_READ | PROT_WRITE, MAP_SHARED, memfd, 0);
-	if (devmem == MAP_FAILED) {
-		perror("Failed to mmap /dev/mem");
+	mem = mmap(NULL, info.totalram, PROT_READ | PROT_WRITE, MAP_SHARED, memfd, 0);
+	if (mem == MAP_FAILED) {
+		perror("Failed to mmap plain device path");
 		return 1;
 	}
 	close(memfd);
+*/
 
 	chrfd = open("/dev/cheeze_chr", O_RDWR);
 	if (chrfd < 0) {
@@ -86,7 +85,7 @@ int main() {
 		return 1;
 	}
 
-	copyfd = open(COPY_TARGET, O_RDWR);
+	copyfd = open(COPY_TARGET, O_RDONLY);
 	if (copyfd < 0) {
 		perror("Failed to open " COPY_TARGET);
 		return 1;
@@ -98,8 +97,8 @@ int main() {
 	read(copyfd, mem, fdlength(copyfd));
 	printf("read'ed\n");
 */
-	fmem = mmap(NULL, fdlength(copyfd), PROT_READ, MAP_SHARED, copyfd, 0);
-	if (fmem == MAP_FAILED) {
+	mem = mmap(NULL, fdlength(copyfd), PROT_READ, MAP_SHARED, copyfd, 0);
+	if (mem == MAP_FAILED) {
 		perror("Failed to mmap copy path");
 		return 1;
 	}
@@ -138,13 +137,7 @@ int main() {
 		// write(1, buf, req->size);
 		// printf("\n");
 
-		if (req->rw == OP_READ) {
-			req->user_buf = fmem + (req->size * req->index) + req->offset;
-		} else {
-			memcpy(fmem + (req->size * req->index) + req->offset,
-				devmem + (req->size * req->index) + req->offset,
-				req->size);
-		}
+		req->user_buf = mem + (req->size * req->index) + req->offset;
 
 		//clock_gettime(CLOCK_MONOTONIC_RAW, &start);
 		write(chrfd, req, sizeof(struct cheeze_req));
