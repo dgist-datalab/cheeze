@@ -11,6 +11,15 @@
 #define OP_READ 0
 #define OP_WRITE 1
 
+// #define DEBUG
+#define DEBUG_SLEEP 1
+
+#ifdef DEBUG
+  #define msleep_dbg msleep
+#else
+  #define msleep_dbg(...) ((void)0)
+#endif
+
 struct cheeze_req {
 	int rw;
 	volatile int acked;
@@ -20,7 +29,7 @@ struct cheeze_req {
 	unsigned long id;
 	void *addr;
 	void *user_buf;
-};
+} __attribute__((aligned(8), packed));
 
 // blk.c
 extern struct class *cheeze_chr_class;

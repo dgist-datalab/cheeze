@@ -1,6 +1,8 @@
 ifneq ($(KERNELRELEASE),)
 	obj-m	 := cheeze.o
 	cheeze-y := blk.o chr.o queue.o
+
+	# EXTRA_CFLAGS += -DDEBUG
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 	PWD :=$(shell pwd)

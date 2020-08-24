@@ -86,6 +86,8 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 	id = cheeze_push(OP_READ, index, offset, bvec->bv_len, user_mem);
 
 	while (reqs[id].acked == 0) {
+		msleep_dbg(DEBUG_SLEEP);
+		pr_debug("%s: %lu: waiting for ack\n", __func__, id);
 		//mb();
 		//usleep_range(50, 75);
 	}
@@ -139,6 +141,8 @@ static int cheeze_bvec_write(struct bio_vec *bvec,
 	id = cheeze_push(OP_WRITE, index, offset, bvec->bv_len, user_mem);
 
 	while (reqs[id].acked == 0) {
+		msleep_dbg(DEBUG_SLEEP);
+		pr_debug("%s: %lu: waiting for ack\n", __func__, id);
 		//mb();
 		//usleep_range(50, 75);
 	}
@@ -213,8 +217,8 @@ static void __cheeze_make_request(struct bio *bio, int rw)
 			goto out_error;
 		}
 
-		//pr_info("%s: %s, index=%d, offset=%d, bv_len=%d\n",
-		//	 __func__, rw ? "write" : "read", index, offset, bvec.bv_len);
+		pr_info("%s: %s, index=%d, offset=%d, bv_len=%d\n",
+			 __func__, rw ? "write" : "read", index, offset, bvec.bv_len);
 
 		ret = cheeze_bvec_rw(&bvec, index, offset, bio, rw);
 		if (ret < 0) {

@@ -35,15 +35,17 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 	struct cheeze_req *req;
 
 	if (unlikely(count != sizeof(struct cheeze_req))) {
-		pr_err("read: size mismatch: %ld vs %ld\n",
-			count, sizeof(struct cheeze_req));
+		pr_err("%s: size mismatch: %ld vs %ld\n",
+			__func__, count, sizeof(*req));
 		return -EINVAL;
 	}
 
 	req = cheeze_pop();
 
-	if (unlikely(copy_to_user(buf, req, count)))
+	if (unlikely(copy_to_user(buf, req, count))) {
+		pr_err("%s: copy_to_user() failed\n", __func__);
 		return -EFAULT;
+	}
 
 	return count;
 }
@@ -54,26 +56,41 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 	struct cheeze_req req;
 
 	if (unlikely(count != sizeof(req))) {
-		pr_err("read: size mismatch: %ld vs %ld\n",
-			count, sizeof(req));
+		pr_err("%s: size mismatch: %ld vs %ld\n",
+			__func__, count, sizeof(req));
 		return -EINVAL;
 	}
 
-	if (unlikely(copy_from_user(&req, buf, sizeof(req))))
+	if (unlikely(copy_from_user(&req, buf, sizeof(req)))) {
+		pr_err("%s: failed to fill req\n", __func__);
 		return -EFAULT;
+	}
+
+	pr_debug("%s: req[%lu]\n"
+		"    rw=%d\n"
+		"    index=%u\n"
+		"    offset=%u\n"
+		"    size=%u\n"
+		"    addr=%p\n",
+			__func__, req.id, req.rw, req.index, req.offset, req.size, req.addr);
 
 	switch (req.rw) {
 	case OP_READ:
-		if (unlikely(copy_from_user(req.addr, req.user_buf, req.size)))
+		if (unlikely(copy_from_user(req.addr, req.user_buf, req.size))) {
+			pr_err("%s: copy_from_user() failed\n", __func__);
 			return -EFAULT;
+		}
 		break;
 	case OP_WRITE:
-		if (unlikely(copy_to_user(req.user_buf, req.addr, req.size)))
+		if (unlikely(copy_to_user(req.user_buf, req.addr, req.size))) {
+			pr_err("%s: copy_to_user() failed\n", __func__);
 			return -EFAULT;
+		}
 		break;
 	}
 
 	reqs[req.id].acked = 1;
+	pr_debug("%s: reqs[%lu].acked = 1\n", __func__, req.id);
 
 	return (ssize_t)count;
 }

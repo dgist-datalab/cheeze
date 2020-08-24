@@ -24,9 +24,9 @@ struct cheeze_req {
 	unsigned long id;
 	void *addr;
 	void *user_buf;
-};
+} __attribute__((aligned(8), packed));
 
-#define COPY_TARGET "/dev/vdb"
+#define COPY_TARGET "/tmp/vdb"
 
 static off_t fdlength(int fd)
 {
@@ -85,7 +85,7 @@ int main() {
 		return 1;
 	}
 
-	copyfd = open(COPY_TARGET, O_RDONLY);
+	copyfd = open(COPY_TARGET, O_RDWR);
 	if (copyfd < 0) {
 		perror("Failed to open " COPY_TARGET);
 		return 1;
@@ -97,7 +97,7 @@ int main() {
 	read(copyfd, mem, fdlength(copyfd));
 	printf("read'ed\n");
 */
-	mem = mmap(NULL, fdlength(copyfd), PROT_READ, MAP_SHARED, copyfd, 0);
+	mem = mmap(NULL, fdlength(copyfd), PROT_READ | PROT_WRITE, MAP_SHARED, copyfd, 0);
 	if (mem == MAP_FAILED) {
 		perror("Failed to mmap copy path");
 		return 1;
@@ -114,6 +114,7 @@ int main() {
 		//printf("Transmission time: %ld.%.9ld\n", trans_time / 1000000000L, trans_time % 1000000000L);
 		if (r < 0)
 			break;
+
 /*
 		printf("New req[%lu]\n"
 			"  rw=%d\n"
@@ -138,6 +139,9 @@ int main() {
 		// printf("\n");
 
 		req->user_buf = mem + (req->size * req->index) + req->offset;
+
+		// Sanity check
+		// memset(req->user_buf, 0, req->size);
 
 		//clock_gettime(CLOCK_MONOTONIC_RAW, &start);
 		write(chrfd, req, sizeof(struct cheeze_req));
