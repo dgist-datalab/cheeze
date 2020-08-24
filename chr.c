@@ -20,56 +20,19 @@ static struct cdev cheeze_chr_cdev;
 static struct class *cheeze_chr_class;
 static DECLARE_WAIT_QUEUE_HEAD(cheeze_chr_wait);
 
-#if 0
-struct cheeze_chr_state {
-	struct semaphore sem;	/* Semaphore on the state structure */
-
-	u8 S[256];		/* The state array */
-	u8 i;
-	u8 j;
-
-	char *buf;
-};
-#endif
-
 static int cheeze_chr_open(struct inode *inode, struct file *filp)
 {
-//	struct cheeze_chr_state *state;
-
-	int num = iminor(inode);
-
-	/*
-	 * This should never happen, now when the minors are regsitered
-	 * explicitly
-	 */
-	if (num != CHEEZE_CHR_MINOR)
-		return -ENODEV;
-
-//	state = kmalloc(sizeof(struct cheeze_chr_state), GFP_KERNEL);
-//	if (!state)
-//		return -ENOMEM;
-
-//	sema_init(&state->sem, 1);	/* Init semaphore as a mutex */
-
-//	filp->private_data = state;
-
-	return 0;		/* Success */
+	return 0;
 }
 
 static int cheeze_chr_release(struct inode *inode, struct file *filp)
 {
-//	struct cheeze_chr_state *state = filp->private_data;
-
-//	kfree(state->buf);
-//	kfree(state);
-
 	return 0;
 }
 
 static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 			    loff_t * f_pos)
 {
-//	struct cheeze_chr_state *state = filp->private_data;
 	struct cheeze_req *req;
 	int dobytes, k;
 	char *localbuf;
@@ -77,9 +40,6 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 	unsigned int i;
 	unsigned int j;
 	u8 *S;
-
-//	if (unlikely(down_interruptible(&state->sem)))
-//		return -ERESTARTSYS;
 
 	if (unlikely(count != sizeof(struct cheeze_req))) {
 		pr_err("read: size mismatch: %ld vs %ld\n",
@@ -90,7 +50,6 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 	if (unlikely(copy_to_user(buf, cheeze_pop(), count)))
 		return -EFAULT;
 
-//	up(&state->sem);
 	return count;
 }
 
@@ -98,7 +57,6 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 			    size_t count, loff_t *ppos)
 {
 	struct cheeze_req req;
-//	unsigned long id;
 
 	if (unlikely(count != sizeof(req))) {
 		pr_err("read: size mismatch: %ld vs %ld\n",
@@ -106,11 +64,8 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 		return -EINVAL;
 	}
 
-//	pr_info("write: count=%lu\n", count);
 	if (unlikely(copy_from_user(&req, buf, sizeof(req))))
 		return -EFAULT;
-
-//	pr_info("%s: id = %lu\n", __func__, req.id);
 
 	if (unlikely(copy_from_user(req.addr, req.user_buf, req.size)))
 		return -EFAULT;
