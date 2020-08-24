@@ -23,6 +23,7 @@ struct cheeze_req {
 };
 
 // blk.c
+extern struct class *cheeze_chr_class;
 // extern struct mutex cheeze_mutex;
 void cheeze_chr_cleanup_module(void);
 int cheeze_chr_init_module(void);

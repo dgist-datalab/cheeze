@@ -36,6 +36,8 @@ static u64 cheeze_disksize;
 static struct page *swap_header_page;
 static bool force_remove;
 
+struct class *cheeze_chr_class;
+
 /*
  * Check if request is within bounds and aligned on cheeze logical blocks.
  */
@@ -404,9 +406,16 @@ static int __init cheeze_init(void)
 		goto free_devices;
 	}
 
+	cheeze_chr_class = class_create(THIS_MODULE, "cheeze_chr");
+	if (IS_ERR(cheeze_chr_class)) {
+		ret = PTR_ERR(cheeze_chr_class);
+		pr_warn("Failed to register class cheeze_chr\n");
+		goto destroy_devices;
+	}
+
 	ret = cheeze_chr_init_module();
 	if (ret)
-		goto destroy_devices;
+		goto destroy_chr;
 
 	reqs = kzalloc(sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE, GFP_KERNEL);
 	if (reqs == NULL) {
@@ -419,6 +428,8 @@ static int __init cheeze_init(void)
 
 nomem:
 	cheeze_chr_cleanup_module();
+destroy_chr:
+	class_destroy(cheeze_chr_class);
 destroy_devices:
 	destroy_device();
 free_devices:
@@ -434,6 +445,8 @@ static void __exit cheeze_exit(void)
 	kfree(reqs);
 
 	cheeze_chr_cleanup_module();
+
+	class_destroy(cheeze_chr_class);
 
 	destroy_device();
 

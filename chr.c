@@ -17,7 +17,6 @@
 #define CHEEZE_CHR_MINOR 11
 
 static struct cdev cheeze_chr_cdev;
-static struct class *cheeze_chr_class;
 static DECLARE_WAIT_QUEUE_HEAD(cheeze_chr_wait);
 
 static int cheeze_chr_open(struct inode *inode, struct file *filp)
@@ -87,7 +86,6 @@ void cheeze_chr_cleanup_module(void)
 	unregister_chrdev_region(MKDEV(CHEEZE_CHR_MAJOR, CHEEZE_CHR_MINOR), 1);
 	cdev_del(&cheeze_chr_cdev);
 	device_destroy(cheeze_chr_class, MKDEV(CHEEZE_CHR_MAJOR, CHEEZE_CHR_MINOR));
-	class_destroy(cheeze_chr_class);
 }
 
 int cheeze_chr_init_module(void)
@@ -95,12 +93,6 @@ int cheeze_chr_init_module(void)
 	struct device *cheeze_chr_device;
 	int result;
 
-	cheeze_chr_class = class_create(THIS_MODULE, "cheeze_chr");
-	if (IS_ERR(cheeze_chr_class)) {
-		result = PTR_ERR(cheeze_chr_class);
-		pr_warn("Failed to register class cheeze_chr\n");
-		goto error0;
-	}
 
 	/*
 	 * Register your major, and accept a dynamic number. This is the
@@ -141,8 +133,6 @@ error3:
 error2:
 	cdev_del(&cheeze_chr_cdev);
 error1:
-	class_destroy(cheeze_chr_class);
-error0:
 
 	return result;
 }
