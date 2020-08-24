@@ -7,7 +7,6 @@
 #define __CHEEZE_H
 
 #define CHEEZE_QUEUE_SIZE 1024
-#define CHEEZE_CHR_MAJOR 235
 
 #define OP_READ 0
 #define OP_WRITE 1
@@ -26,12 +25,8 @@ struct cheeze_req {
 // blk.c
 extern struct class *cheeze_chr_class;
 // extern struct mutex cheeze_mutex;
-
-// chr.c
-void cheezer_cleanup_module(void);
-int cheezer_init_module(void);
-void cheezew_cleanup_module(void);
-int cheezew_init_module(void);
+void cheeze_chr_cleanup_module(void);
+int cheeze_chr_init_module(void);
 
 // queue.c
 extern struct cheeze_req *reqs;

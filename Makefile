@@ -1,6 +1,6 @@
 ifneq ($(KERNELRELEASE),)
 	obj-m	 := cheeze.o
-	cheeze-y := blk.o chr_r.o chr_w.o queue.o
+	cheeze-y := blk.o chr.o queue.o
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 	PWD :=$(shell pwd)

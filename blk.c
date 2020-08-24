@@ -413,27 +413,21 @@ static int __init cheeze_init(void)
 		goto destroy_devices;
 	}
 
-	ret = cheezer_init_module();
+	ret = cheeze_chr_init_module();
 	if (ret)
 		goto destroy_chr;
-
-	ret = cheezew_init_module();
-	if (ret)
-		goto destroy_r;
 
 	reqs = kzalloc(sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE, GFP_KERNEL);
 	if (reqs == NULL) {
 		pr_err("%s %d: Unable to allocate memory for cheeze_req\n", __func__, __LINE__);
 		ret = -ENOMEM;
-		goto destroy_w;
+		goto nomem;
 	}
 
 	return 0;
 
-destroy_w:
-	cheezew_cleanup_module();
-destroy_r:
-	cheezer_cleanup_module();
+nomem:
+	cheeze_chr_cleanup_module();
 destroy_chr:
 	class_destroy(cheeze_chr_class);
 destroy_devices:
@@ -450,8 +444,7 @@ static void __exit cheeze_exit(void)
 
 	kfree(reqs);
 
-	cheezew_cleanup_module();
-	cheezer_cleanup_module();
+	cheeze_chr_cleanup_module();
 
 	class_destroy(cheeze_chr_class);
 
