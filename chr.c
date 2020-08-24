@@ -33,12 +33,6 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 			    loff_t * f_pos)
 {
 	struct cheeze_req *req;
-	int dobytes, k;
-	char *localbuf;
-
-	unsigned int i;
-	unsigned int j;
-	u8 *S;
 
 	if (unlikely(count != sizeof(struct cheeze_req))) {
 		pr_err("read: size mismatch: %ld vs %ld\n",
@@ -46,7 +40,9 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 		return -EINVAL;
 	}
 
-	if (unlikely(copy_to_user(buf, cheeze_pop(), count)))
+	req = cheeze_pop();
+
+	if (unlikely(copy_to_user(buf, req, count)))
 		return -EFAULT;
 
 	return count;
