@@ -17,13 +17,13 @@
 
 struct cheeze_req {
 	int rw;
-	volatile int acked;
 	unsigned int index;
 	unsigned int offset;
 	unsigned int size;
-	unsigned long id;
+	int id;
 	void *addr;
 	void *user_buf;
+	char acked[32]; // struct completion acked;
 } __attribute__((aligned(8), packed));
 
 #define COPY_TARGET "/tmp/vdb"

@@ -10,6 +10,7 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/cdev.h>
+#include <linux/completion.h>
 
 #include "cheeze.h"
 
@@ -41,6 +42,10 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 	}
 
 	req = cheeze_pop();
+	if (unlikely(req == NULL)) {
+		pr_err("%s: failed to pop queue\n", __func__);
+		return -ERESTARTSYS;
+	}
 
 	if (unlikely(copy_to_user(buf, req, count))) {
 		pr_err("%s: copy_to_user() failed\n", __func__);
@@ -66,7 +71,7 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 		return -EFAULT;
 	}
 
-	pr_debug("%s: req[%lu]\n"
+	pr_debug("%s: req[%d]\n"
 		"    rw=%d\n"
 		"    index=%u\n"
 		"    offset=%u\n"
@@ -89,8 +94,8 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 		break;
 	}
 
-	reqs[req.id].acked = 1;
-	pr_debug("%s: reqs[%lu].acked = 1\n", __func__, req.id);
+	complete(&reqs[req.id].acked);
+	pr_debug("%s: reqs[%d].acked = 1\n", __func__, req.id);
 
 	return (ssize_t)count;
 }

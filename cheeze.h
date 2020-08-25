@@ -22,13 +22,13 @@
 
 struct cheeze_req {
 	int rw;
-	volatile int acked;
 	unsigned int index;
 	unsigned int offset;
 	unsigned int size;
-	unsigned long id;
+	int id;
 	void *addr;
 	void *user_buf;
+	struct completion acked;
 } __attribute__((aligned(8), packed));
 
 // blk.c
@@ -39,7 +39,7 @@ int cheeze_chr_init_module(void);
 
 // queue.c
 extern struct cheeze_req *reqs;
-unsigned long cheeze_push(const int rw,
+int cheeze_push(const int rw,
 		 const unsigned int index,
 		 const unsigned int offset,
 		 const unsigned int size,

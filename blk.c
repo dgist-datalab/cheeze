@@ -14,7 +14,9 @@
 
 #include <linux/module.h>
 #include <linux/blkdev.h>
+#include <linux/backing-dev.h>
 #include <linux/delay.h>
+#include <linux/completion.h>
 
 #include "cheeze.h"
 
@@ -61,10 +63,9 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 	struct page *page;
 	struct cheeze_req *req;
 	unsigned char *user_mem, *swap_header_page_mem;
-	unsigned long id;
 	phys_addr_t addr;
+	int id, ret;
 
-//	mutex_lock(&mutex);
 //	i++;
 
 //	pr_info("i: %d\n", i);
@@ -84,7 +85,14 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 	// pr_info("addr: 0x%llx (%lld)\n", addr, addr);
 
 	id = cheeze_push(OP_READ, index, offset, bvec->bv_len, user_mem);
+	if (id < 0)
+		return id;
 
+	ret = wait_for_completion_interruptible(&reqs[id].acked);
+	if (ret)
+		return ret;
+
+#if 0
 	while (reqs[id].acked == 0) {
 		msleep_dbg(DEBUG_SLEEP);
 		pr_debug("%s: %lu: waiting for ack\n", __func__, id);
@@ -92,7 +100,6 @@ static int cheeze_bvec_read(struct bio_vec *bvec,
 		//usleep_range(50, 75);
 	}
 
-#if 0
 	if (index == 0 && swap_header_page) {
 		swap_header_page_mem = kmap_atomic(swap_header_page);
 		memcpy(user_mem + bvec->bv_offset, swap_header_page_mem, bvec->bv_len);
@@ -128,8 +135,8 @@ static int cheeze_bvec_write(struct bio_vec *bvec,
 	struct page *page;
 	struct cheeze_req *req;
 	unsigned char *user_mem, *swap_header_page_mem;
-	unsigned long id;
 	phys_addr_t addr;
+	int id, ret;
 
 	page = bvec->bv_page;
 
@@ -139,14 +146,21 @@ static int cheeze_bvec_write(struct bio_vec *bvec,
 //	pr_info("addr: 0x%llx (%lld)\n", addr, addr);
 
 	id = cheeze_push(OP_WRITE, index, offset, bvec->bv_len, user_mem);
+	if (id < 0)
+		return id;
 
+	ret = wait_for_completion_interruptible(&reqs[id].acked);
+	if (ret)
+		return ret;
+
+/*
 	while (reqs[id].acked == 0) {
 		msleep_dbg(DEBUG_SLEEP);
 		pr_debug("%s: %lu: waiting for ack\n", __func__, id);
 		//mb();
 		//usleep_range(50, 75);
 	}
-/*
+
 	if (swap_header_page == NULL)
 		swap_header_page = alloc_page(GFP_KERNEL | GFP_NOIO);
 	swap_header_page_mem = kmap_atomic(swap_header_page);
@@ -202,10 +216,12 @@ static void __cheeze_make_request(struct bio *bio, int rw)
 	}
 
 	if (bio->bi_iter.bi_size > PAGE_SIZE) {
+		//pr_err("1: %s\n", op_is_flush(bio->bi_opf) ? "flush" : "noflush");
 		goto out_error;
 	}
 
 	if (bio->bi_vcnt > 1) {
+		//pr_err("2: %s\n", op_is_flush(bio->bi_opf) ? "flush" : "noflush");
 		goto out_error;
 	}
 
@@ -217,7 +233,7 @@ static void __cheeze_make_request(struct bio *bio, int rw)
 			goto out_error;
 		}
 
-		pr_info("%s: %s, index=%d, offset=%d, bv_len=%d\n",
+		pr_debug("%s: %s, index=%d, offset=%d, bv_len=%d\n",
 			 __func__, rw ? "write" : "read", index, offset, bvec.bv_len);
 
 		ret = cheeze_bvec_rw(&bvec, index, offset, bio, rw);
@@ -227,9 +243,9 @@ static void __cheeze_make_request(struct bio *bio, int rw)
 				       "(ret) = (%d)\n",
 				       __func__, __LINE__, ret);
 			else
-				pr_debug("%s %d: cheeze_bvec_rw failed. "
+				pr_info("%s %d: (rw:%d) cheeze_bvec_rw failed. "
 					 "(ret) = (%d)\n",
-					 __func__, __LINE__, ret);
+					 __func__, __LINE__, rw, ret);
 			goto out_error;
 		}
 
@@ -242,6 +258,7 @@ static void __cheeze_make_request(struct bio *bio, int rw)
 	return;
 
 out_error:
+	//pr_info("rw=%d: yo lol wut %s\n", rw, op_is_flush(bio->bi_opf) ? "flush" : "noflush");
 	bio_io_error(bio);
 }
 
@@ -335,6 +352,7 @@ static int create_device(void)
 	cheeze_disk->fops = &cheeze_fops;
 	cheeze_disk->private_data = NULL;
 	snprintf(cheeze_disk->disk_name, 16, "cheeze%d", 0);
+	cheeze_disk->queue->backing_dev_info->capabilities |= BDI_CAP_SYNCHRONOUS_IO;
 
 	/* Actual capacity set using sysfs (/sys/block/cheeze<id>/disksize) */
 	set_capacity(cheeze_disk, 0);
@@ -397,7 +415,7 @@ static void destroy_device(void)
 
 static int __init cheeze_init(void)
 {
-	int ret;
+	int ret, i;
 
 	cheeze_major = register_blkdev(0, "cheeze");
 	if (cheeze_major <= 0) {
@@ -431,6 +449,8 @@ static int __init cheeze_init(void)
 		ret = -ENOMEM;
 		goto nomem;
 	}
+	for (i = 0; i < CHEEZE_QUEUE_SIZE; i++)
+		init_completion(&reqs[i].acked);
 
 	return 0;
 
