@@ -5,16 +5,15 @@
 
 #include <linux/module.h>
 #include <linux/delay.h>
+#include <linux/semaphore.h>
 
 #include "cheeze.h"
 
-static int front, rear, qsize;
+static int front, rear;
+static struct semaphore mutex, slots, items;
 
 // Protect with lock
 struct cheeze_req *reqs = NULL;
-static DEFINE_MUTEX(mutex);
-static DECLARE_COMPLETION(queue_added);
-static DECLARE_COMPLETION(queue_freed);
 
 static inline bool empty(void) {
 	return (front == rear);
@@ -27,27 +26,25 @@ int cheeze_push(const int rw,
 		 const unsigned int size,
 		 void *addr) {
 	struct cheeze_req *req;
-	int ret;
+	int id, ret;
 
-	while (unlikely((rear + 1) % CHEEZE_QUEUE_SIZE == front)) {
-		ret = wait_for_completion_interruptible(&queue_freed);
-		if (ret)
-			return ret;
-	}
+	ret = down_interruptible(&slots);	/* Wait for available slot */
+	if (unlikely(ret < 0))
+		return ret;
+	ret = down_interruptible(&mutex);	/* Lock the buffer */
+	if (unlikely(ret < 0))
+		return ret;
 
-	mutex_lock(&mutex);
+	id = (++rear) % CHEEZE_QUEUE_SIZE; // XXX: Overflow?
+	req = reqs + id;		/* Insert the item */
 
-	qsize++;
-	rear = (rear + 1) % CHEEZE_QUEUE_SIZE;
-
-	req = reqs + rear;
 	reinit_completion(&req->acked);
 	req->rw = rw;
 	req->index = index;
 	req->offset = offset;
 	req->size = size;
 	req->addr = addr;
-	req->id = rear;
+	req->id = id;
 
 	pr_debug("req[%d]\n"
 		"  rw=%d\n"
@@ -57,30 +54,33 @@ int cheeze_push(const int rw,
 		"  addr=%p\n",
 			rear, rw, index, offset, size, addr);
 
-	mutex_unlock(&mutex);
+	up(&mutex);	/* Unlock the buffer */
+	up(&items);	/* Announce available item */
 
-	complete(&queue_added);
-
-	return rear;
+	return id;
 }
 
 struct cheeze_req *cheeze_pop(void) {
-	int ret;
+	int id, ret;
 
-	while (unlikely(empty())) {
-		ret = wait_for_completion_interruptible(&queue_added);
-		if (ret)
-			return NULL;
-	}
+	ret = down_interruptible(&items);	/* Wait for available item */
+	if (unlikely(ret < 0))
+		return NULL;
+	ret = down_interruptible(&mutex);	/* Lock the buffer */
+	if (unlikely(ret < 0))
+		return NULL;
 
-	mutex_lock(&mutex);
+	id = (++front) % CHEEZE_QUEUE_SIZE;	/* Remove the item */
 
-	qsize--;
-	front = (front + 1) % CHEEZE_QUEUE_SIZE;
+	up(&mutex);	/* Unlock the buffer */
+	up(&slots);	/* Announce available slot */
 
-	mutex_unlock(&mutex);
+	return reqs + id;
+}
 
-	complete(&queue_freed);
-
-	return reqs + front;
+void cheeze_queue_init(void) {
+	front = rear = 0;	/* Empty buffer iff front == rear */
+	sema_init(&mutex, 1);	/* Binary semaphore for locking */
+	sema_init(&slots, CHEEZE_QUEUE_SIZE);	/* Initially, buf has n empty slots */
+	sema_init(&items, 0);	/* Initially, buf has zero data items */
 }

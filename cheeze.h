@@ -45,5 +45,6 @@ int cheeze_push(const int rw,
 		 const unsigned int size,
 		 void *addr);
 struct cheeze_req *cheeze_pop(void);
+void cheeze_queue_init(void);
 
 #endif

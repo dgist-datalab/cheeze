@@ -449,6 +449,7 @@ static int __init cheeze_init(void)
 		ret = -ENOMEM;
 		goto nomem;
 	}
+	cheeze_queue_init();
 	for (i = 0; i < CHEEZE_QUEUE_SIZE; i++)
 		init_completion(&reqs[i].acked);
 
