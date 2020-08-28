@@ -62,16 +62,42 @@ static int cheeze_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 /* Serve requests */
 static int do_request(struct request *rq, unsigned int *nr_bytes)
 {
-	int ret = 0, id, rw;
+	int ret = 0, id, rw = 0;
 	unsigned long b_len = 0;
 	struct bio_vec bvec;
 	struct req_iterator iter;
 	loff_t pos = blk_rq_pos(rq) << SECTOR_SHIFT;
 	void *b_buf;
 
+	switch (req_op(rq)) {
+	case REQ_OP_FLUSH:
+		pr_warn("ignoring REQ_OP_FLUSH\n");
+		WARN_ON(1);
+		return -EIO;
+		break;
+	case REQ_OP_WRITE_ZEROES:
+		pr_warn("ignoring REQ_OP_WRITE_ZEROES\n");
+		WARN_ON(1);
+		return -EIO;
+		break;
+	case REQ_OP_DISCARD:
+		pr_warn("ignoring REQ_OP_DISCARD\n");
+		WARN_ON(1);
+		return -EIO;
+		break;
+	case REQ_OP_WRITE:
+		rw = 1;
+		/* fallthrough */
+	case REQ_OP_READ:
+		break;
+	default:
+		WARN_ON(1);
+		return -EIO;
+		break;
+	}
+
 	pr_debug("%s++\n", __func__);
 
-	rw = rq_data_dir(rq);
 	/* Iterate over all requests segments */
 	rq_for_each_segment(bvec, rq, iter) {
 		b_len = bvec.bv_len;
@@ -82,12 +108,16 @@ static int do_request(struct request *rq, unsigned int *nr_bytes)
 		pr_debug("sector: %ld, pos: %lld, len: %ld, dest_buf: %p\n", blk_rq_pos(rq), pos, b_len, b_buf);
 
 		id = cheeze_push(rw, pos, b_len, b_buf);
-		if (unlikely(id < 0))
+		if (unlikely(id < 0)) {
+			WARN_ON(1);
 			return id;
+		}
 
 		ret = wait_for_completion_interruptible(&reqs[id].acked);
-		if (unlikely(ret))
+		if (unlikely(ret)) {
+			WARN_ON(1);
 			return ret;
+		}
 
 		/* Increment counters */
 		pos += b_len;

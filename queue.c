@@ -32,7 +32,7 @@ int cheeze_push(const int rw,
 		return ret;
 
 	id = (rear + 1) % CHEEZE_QUEUE_SIZE; // XXX: Overflow?
-	pr_info("pushing %d(%d)\n", id, reqs[id].id);
+	// pr_info("pushing %d(%d)\n", id, reqs[id].id);
 	rear = id;
 	req = reqs + id;		/* Insert the item */
 

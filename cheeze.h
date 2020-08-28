@@ -6,7 +6,7 @@
 #ifndef __CHEEZE_H
 #define __CHEEZE_H
 
-#define CHEEZE_QUEUE_SIZE 1024
+#define CHEEZE_QUEUE_SIZE 4096
 
 // #define DEBUG
 #define DEBUG_SLEEP 1
