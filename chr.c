@@ -79,13 +79,13 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 			__func__, req.id, req.rw, req.offset, req.size, req.addr);
 
 	switch (req.rw) {
-	case OP_READ:
+	case READ:
 		if (unlikely(copy_from_user(req.addr, req.user_buf, req.size))) {
 			pr_err("%s: copy_from_user() failed\n", __func__);
 			return -EFAULT;
 		}
 		break;
-	case OP_WRITE:
+	case WRITE:
 		if (unlikely(copy_to_user(req.user_buf, req.addr, req.size))) {
 			pr_err("%s: copy_to_user() failed\n", __func__);
 			return -EFAULT;

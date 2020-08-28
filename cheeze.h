@@ -8,9 +8,6 @@
 
 #define CHEEZE_QUEUE_SIZE 1024
 
-#define OP_READ 0
-#define OP_WRITE 1
-
 // #define DEBUG
 #define DEBUG_SLEEP 1
 

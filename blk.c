@@ -34,16 +34,11 @@
 // cheeze is intentionally designed to expose 1 disk only
 
 /* Globals */
-static int cheeze_major, i;
+static int cheeze_major;
 static struct gendisk *cheeze_disk;
 static u64 cheeze_disksize;
 static struct page *swap_header_page;
-
-static sector_t capacity;
-static u8 *data;   /* Data buffer to emulate real storage device */
 static struct blk_mq_tag_set tag_set;
-static struct request_queue *queue;
-static struct gendisk *gdisk;
 
 struct class *cheeze_chr_class;
 
@@ -67,15 +62,16 @@ static int cheeze_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 /* Serve requests */
 static int do_request(struct request *rq, unsigned int *nr_bytes)
 {
-	int ret = 0, id;
-	unsigned long b_len;
+	int ret = 0, id, rw;
+	unsigned long b_len = 0;
 	struct bio_vec bvec;
 	struct req_iterator iter;
-	struct block_dev *dev = rq->q->queuedata;
 	loff_t pos = blk_rq_pos(rq) << SECTOR_SHIFT;
-	loff_t dev_size = (loff_t) cheeze_disksize;
 	void *b_buf;
 
+	pr_debug("%s++\n", __func__);
+
+	rw = rq_data_dir(rq);
 	/* Iterate over all requests segments */
 	rq_for_each_segment(bvec, rq, iter) {
 		b_len = bvec.bv_len;
@@ -83,39 +79,22 @@ static int do_request(struct request *rq, unsigned int *nr_bytes)
 		/* Get pointer to the data */
 		b_buf = page_address(bvec.bv_page) + bvec.bv_offset;
 
-		/* Simple check that we are not out of the memory bounds */
-		if (unlikely((pos + b_len) > dev_size)) {
-			b_len = (unsigned long)(dev_size - pos);
-		}
+		pr_debug("sector: %ld, pos: %lld, len: %ld, dest_buf: %p\n", blk_rq_pos(rq), pos, b_len, b_buf);
 
-		pr_debug("sector: %ld, pos: %lld, len: %ld\n", blk_rq_pos(rq), pos, b_len);
+		id = cheeze_push(rw, pos, b_len, b_buf);
+		if (unlikely(id < 0))
+			return id;
 
-		if (rq_data_dir(rq) == WRITE) {
-			/* Copy data to the buffer in to required position */
-			id = cheeze_push(OP_WRITE, pos, b_len, b_buf);
-			if (id < 0)
-				return id;
-
-			ret = wait_for_completion_interruptible(&reqs[id].acked);
-			if (ret)
-				return ret;
-			//memcpy(dev->data + pos, b_buf, b_len);
-		} else {
-			/* Read data from the buffer's position */
-			id = cheeze_push(OP_READ, pos, b_len, b_buf);
-			if (id < 0)
-				return id;
-
-			ret = wait_for_completion_interruptible(&reqs[id].acked);
-			if (ret)
-				return ret;
-			//memcpy(b_buf, dev->data + pos, b_len);
-		}
+		ret = wait_for_completion_interruptible(&reqs[id].acked);
+		if (unlikely(ret))
+			return ret;
 
 		/* Increment counters */
 		pos += b_len;
 		*nr_bytes += b_len;
 	}
+
+	pr_debug("%s--\n", __func__);
 
 	return 0;
 }
@@ -150,242 +129,6 @@ static blk_status_t queue_rq(struct blk_mq_hw_ctx *hctx,
 static struct blk_mq_ops mq_ops = {
 	.queue_rq = queue_rq,
 };
-
-#if 0
-/*
- * Check if request is within bounds and aligned on cheeze logical blocks.
- */
-static inline int cheeze_valid_io_request(struct bio *bio)
-{
-	if (unlikely(
-		(bio->bi_iter.bi_sector >= (cheeze_disksize >> SECTOR_SHIFT)) ||
-		(bio->bi_iter.bi_sector & (CHEEZE_SECTOR_PER_LOGICAL_BLOCK - 1)) ||
-		(bio->bi_iter.bi_size & (CHEEZE_LOGICAL_BLOCK_SIZE - 1)))) {
-
-		return 0;
-	}
-
-	/* I/O request is valid */
-	return 1;
-}
-
-static int cheeze_bvec_read(struct bio_vec *bvec,
-			    unsigned int index, unsigned int offset,
-			    struct bio *bio)
-{
-	struct page *page;
-	struct cheeze_req *req;
-	unsigned char *user_mem, *swap_header_page_mem;
-	phys_addr_t addr;
-	int id, ret;
-
-//	i++;
-
-//	pr_info("i: %d\n", i);
-//	mutex_unlock(&mutex);
-#if 0
-	if (unlikely(index != 0)) {
-		// pr_err("tried to read outside of swap header\n");
-		// Return empty pages on valid requests to workaround toybox binary search
-	}
-#endif
-
-	page = bvec->bv_page;
-
-	user_mem = kmap_atomic(page);
-	// addr = virt_to_phys(user_mem);
-
-	// pr_info("addr: 0x%llx (%lld)\n", addr, addr);
-
-	id = cheeze_push(OP_READ, index, offset, bvec->bv_len, user_mem);
-	if (id < 0)
-		return id;
-
-	ret = wait_for_completion_interruptible(&reqs[id].acked);
-	if (ret)
-		return ret;
-
-#if 0
-	while (reqs[id].acked == 0) {
-		msleep_dbg(DEBUG_SLEEP);
-		pr_debug("%s: %lu: waiting for ack\n", __func__, id);
-		//mb();
-		//usleep_range(50, 75);
-	}
-
-	if (index == 0 && swap_header_page) {
-		swap_header_page_mem = kmap_atomic(swap_header_page);
-		memcpy(user_mem + bvec->bv_offset, swap_header_page_mem, bvec->bv_len);
-		kunmap_atomic(swap_header_page_mem);
-
-		// It'll be read one-time only
-		__free_page(swap_header_page);
-		swap_header_page = NULL;
-	} else {
-		// Do not allow memory dumps
-		memset(user_mem + bvec->bv_offset, 0, bvec->bv_len);
-	}
-#endif
-
-	//msleep(1000 * 10);
-
-	kunmap_atomic(user_mem);
-	flush_dcache_page(page); // Hmm? XXX
-
-	//udelay(500);
-
-//	mutex_lock(&mutex);
-//	i--;
-//	mutex_unlock(&mutex);
-
-	return 0;
-}
-
-static int cheeze_bvec_write(struct bio_vec *bvec,
-			     unsigned int index, unsigned int offset,
-			     struct bio *bio)
-{
-	struct page *page;
-	struct cheeze_req *req;
-	unsigned char *user_mem, *swap_header_page_mem;
-	phys_addr_t addr;
-	int id, ret;
-
-	page = bvec->bv_page;
-
-	user_mem = kmap_atomic(page);
-//	addr = virt_to_phys(user_mem);
-
-//	pr_info("addr: 0x%llx (%lld)\n", addr, addr);
-
-	id = cheeze_push(OP_WRITE, index, offset, bvec->bv_len, user_mem);
-	if (id < 0)
-		return id;
-
-	ret = wait_for_completion_interruptible(&reqs[id].acked);
-	if (ret)
-		return ret;
-
-/*
-	while (reqs[id].acked == 0) {
-		msleep_dbg(DEBUG_SLEEP);
-		pr_debug("%s: %lu: waiting for ack\n", __func__, id);
-		//mb();
-		//usleep_range(50, 75);
-	}
-
-	if (swap_header_page == NULL)
-		swap_header_page = alloc_page(GFP_KERNEL | GFP_NOIO);
-	swap_header_page_mem = kmap_atomic(swap_header_page);
-	memcpy(swap_header_page_mem, user_mem, PAGE_SIZE);
-	kunmap_atomic(swap_header_page_mem);
-*/
-	kunmap_atomic(user_mem);
-
-	return 0;
-}
-
-static int cheeze_bvec_rw(struct bio_vec *bvec,
-			  unsigned int index, unsigned int offset,
-			  struct bio *bio, int rw)
-{
-	if (rw == READ)
-		return cheeze_bvec_read(bvec, index, offset, bio);
-	else
-		return cheeze_bvec_write(bvec, index, offset, bio);
-}
-
-static void __cheeze_make_request(struct bio *bio, int rw)
-{
-	int offset, ret;
-	unsigned int index;
-	struct bio_vec bvec;
-	struct bvec_iter iter;
-
-	/*if (!cheeze_valid_io_request(bio)) {
-		pr_err("%s %d: invalid io request. "
-		       "(bio->bi_iter.bi_sector, bio->bi_iter.bi_size,"
-		       "cheeze_disksize) = "
-		       "(%llu, %d, %llu)\n",
-		       __func__, __LINE__,
-		       (unsigned long long)bio->bi_iter.bi_sector,
-		       bio->bi_iter.bi_size, cheeze_disksize);
-
-		bio_io_error(bio);
-		return;
-	}*/
-
-	index = bio->bi_iter.bi_sector >> SECTORS_PER_PAGE_SHIFT;
-	offset = (bio->bi_iter.bi_sector & (SECTORS_PER_PAGE - 1)) <<
-	    SECTOR_SHIFT;
-
-	if (offset) {
-		pr_err("%s %d: invalid offset. "
-		       "(bio->bi_iter.bi_sector, index, offset) = (%llu, %d, %d)\n",
-		       __func__, __LINE__,
-		       (unsigned long long)bio->bi_iter.bi_sector,
-		       index, offset);
-		goto out_error;
-	}
-
-	if (bio->bi_iter.bi_size > PAGE_SIZE) {
-		//pr_err("1: %s\n", op_is_flush(bio->bi_opf) ? "flush" : "noflush");
-		goto out_error;
-	}
-
-	if (bio->bi_vcnt > 1) {
-		//pr_err("2: %s\n", op_is_flush(bio->bi_opf) ? "flush" : "noflush");
-		goto out_error;
-	}
-
-	bio_for_each_segment(bvec, bio, iter) {
-		if (bvec.bv_len != PAGE_SIZE || bvec.bv_offset != 0) {
-			pr_err("%s %d: bvec is misaligned. "
-			       "(bv_len, bv_offset) = (%d, %d)\n",
-			       __func__, __LINE__, bvec.bv_len, bvec.bv_offset);
-			goto out_error;
-		}
-
-		pr_debug("%s: %s, index=%d, offset=%d, bv_len=%d\n",
-			 __func__, rw ? "write" : "read", index, offset, bvec.bv_len);
-
-		ret = cheeze_bvec_rw(&bvec, index, offset, bio, rw);
-		if (ret < 0) {
-			if (ret != -ENOSPC)
-				pr_err("%s %d: cheeze_bvec_rw failed."
-				       "(ret) = (%d)\n",
-				       __func__, __LINE__, ret);
-			else
-				pr_info("%s %d: (rw:%d) cheeze_bvec_rw failed. "
-					 "(ret) = (%d)\n",
-					 __func__, __LINE__, rw, ret);
-			goto out_error;
-		}
-
-		index++;
-	}
-
-	bio->bi_status = BLK_STS_OK;
-	bio_endio(bio);
-
-	return;
-
-out_error:
-	//pr_info("rw=%d: yo lol wut %s\n", rw, op_is_flush(bio->bi_opf) ? "flush" : "noflush");
-	bio_io_error(bio);
-}
-
-/*
- * Handler function for all cheeze I/O requests.
- */
-static blk_qc_t cheeze_make_request(struct request_queue *queue,
-				    struct bio *bio)
-{
-	__cheeze_make_request(bio, bio_data_dir(bio));
-
-	return BLK_QC_T_NONE;
-}
-#endif
 
 static const struct block_device_operations cheeze_fops = {
 	.owner = THIS_MODULE,
@@ -488,7 +231,7 @@ static int create_device(void)
 		goto out;
 	}
 
-	cheeze_disk->queue = blk_mq_init_sq_queue(&tag_set, &mq_ops, 128, BLK_MQ_F_SHOULD_MERGE);
+	cheeze_disk->queue = blk_mq_init_sq_queue(&tag_set, &mq_ops, 128, BLK_MQ_F_SHOULD_MERGE | BLK_MQ_F_SG_MERGE);
 	if (!cheeze_disk->queue) {
 		pr_err("%s %d: Error allocating disk queue for device\n",
 		       __func__, __LINE__);
@@ -516,7 +259,7 @@ static int create_device(void)
 				     CHEEZE_LOGICAL_BLOCK_SIZE);
 	blk_queue_io_min(cheeze_disk->queue, PAGE_SIZE);
 	blk_queue_io_opt(cheeze_disk->queue, PAGE_SIZE);
-	blk_queue_max_hw_sectors(cheeze_disk->queue, PAGE_SIZE / SECTOR_SIZE);
+	blk_queue_max_hw_sectors(cheeze_disk->queue, BLK_DEF_MAX_SECTORS);
 
 	add_disk(cheeze_disk);
 
