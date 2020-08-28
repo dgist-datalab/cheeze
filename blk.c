@@ -110,12 +110,12 @@ static blk_status_t queue_rq(struct blk_mq_hw_ctx *hctx,
 	/* Start request serving procedure */
 	blk_mq_start_request(rq);
 
-	if (do_request(rq, &nr_bytes) != 0) {
+	if (unlikely(do_request(rq, &nr_bytes) != 0)) {
 		status = BLK_STS_IOERR;
 	}
 
 	/* Notify kernel about processed nr_bytes */
-	if (blk_update_request(rq, status, nr_bytes)) {
+	if (unlikely(blk_update_request(rq, status, nr_bytes))) {
 		/* Shouldn't fail */
 		BUG();
 	}
