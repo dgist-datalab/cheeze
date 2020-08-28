@@ -115,10 +115,7 @@ static blk_status_t queue_rq(struct blk_mq_hw_ctx *hctx,
 	}
 
 	/* Notify kernel about processed nr_bytes */
-	if (unlikely(blk_update_request(rq, status, nr_bytes))) {
-		/* Shouldn't fail */
-		BUG();
-	}
+	WARN_ON(blk_update_request(rq, status, nr_bytes));
 
 	/* Stop request serving procedure */
 	__blk_mq_end_request(rq, status);

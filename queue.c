@@ -15,10 +15,6 @@ static struct semaphore mutex, slots, items;
 // Protect with lock
 struct cheeze_req *reqs = NULL;
 
-static inline bool empty(void) {
-	return (front == rear);
-}
-
 // Lock must be held and freed before and after push()
 int cheeze_push(const int rw,
 		 const unsigned int offset,
@@ -30,11 +26,14 @@ int cheeze_push(const int rw,
 	ret = down_interruptible(&slots);	/* Wait for available slot */
 	if (unlikely(ret < 0))
 		return ret;
+
 	ret = down_interruptible(&mutex);	/* Lock the buffer */
 	if (unlikely(ret < 0))
 		return ret;
 
-	id = (++rear) % CHEEZE_QUEUE_SIZE; // XXX: Overflow?
+	id = (rear + 1) % CHEEZE_QUEUE_SIZE; // XXX: Overflow?
+	pr_info("pushing %d(%d)\n", id, reqs[id].id);
+	rear = id;
 	req = reqs + id;		/* Insert the item */
 
 	reinit_completion(&req->acked);
@@ -63,11 +62,14 @@ struct cheeze_req *cheeze_pop(void) {
 	ret = down_interruptible(&items);	/* Wait for available item */
 	if (unlikely(ret < 0))
 		return NULL;
+
 	ret = down_interruptible(&mutex);	/* Lock the buffer */
 	if (unlikely(ret < 0))
 		return NULL;
 
-	id = (++front) % CHEEZE_QUEUE_SIZE;	/* Remove the item */
+	id = (front + 1) % CHEEZE_QUEUE_SIZE;	/* Remove the item */
+	pr_info("popping %d(%d)\n", id, reqs[id].id);
+	front = id;
 
 	up(&mutex);	/* Unlock the buffer */
 	up(&slots);	/* Announce available slot */
