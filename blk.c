@@ -14,9 +14,11 @@
 
 #include <linux/module.h>
 #include <linux/blkdev.h>
+#include <linux/genhd.h>
 #include <linux/backing-dev.h>
 #include <linux/delay.h>
 #include <linux/completion.h>
+#include <linux/blk-mq.h>
 
 #include "cheeze.h"
 
@@ -37,8 +39,119 @@ static struct gendisk *cheeze_disk;
 static u64 cheeze_disksize;
 static struct page *swap_header_page;
 
+static sector_t capacity;
+static u8 *data;   /* Data buffer to emulate real storage device */
+static struct blk_mq_tag_set tag_set;
+static struct request_queue *queue;
+static struct gendisk *gdisk;
+
 struct class *cheeze_chr_class;
 
+static int cheeze_open(struct block_device *dev, fmode_t mode)
+{
+	return 0;
+}
+
+static void cheeze_release(struct gendisk *gdisk, fmode_t mode)
+{
+}
+
+static int cheeze_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
+		   unsigned long arg)
+{
+	pr_info("ioctl cmd 0x%08x\n", cmd);
+
+	return -ENOTTY;
+}
+
+/* Serve requests */
+static int do_request(struct request *rq, unsigned int *nr_bytes)
+{
+	int ret = 0, id;
+	unsigned long b_len;
+	struct bio_vec bvec;
+	struct req_iterator iter;
+	struct block_dev *dev = rq->q->queuedata;
+	loff_t pos = blk_rq_pos(rq) << SECTOR_SHIFT;
+	loff_t dev_size = (loff_t) cheeze_disksize;
+	void *b_buf;
+
+	/* Iterate over all requests segments */
+	rq_for_each_segment(bvec, rq, iter) {
+		b_len = bvec.bv_len;
+
+		/* Get pointer to the data */
+		b_buf = page_address(bvec.bv_page) + bvec.bv_offset;
+
+		/* Simple check that we are not out of the memory bounds */
+		if (unlikely((pos + b_len) > dev_size)) {
+			b_len = (unsigned long)(dev_size - pos);
+		}
+
+		pr_debug("sector: %ld, pos: %lld, len: %ld\n", blk_rq_pos(rq), pos, b_len);
+
+		if (rq_data_dir(rq) == WRITE) {
+			/* Copy data to the buffer in to required position */
+			id = cheeze_push(OP_WRITE, pos, b_len, b_buf);
+			if (id < 0)
+				return id;
+
+			ret = wait_for_completion_interruptible(&reqs[id].acked);
+			if (ret)
+				return ret;
+			//memcpy(dev->data + pos, b_buf, b_len);
+		} else {
+			/* Read data from the buffer's position */
+			id = cheeze_push(OP_READ, pos, b_len, b_buf);
+			if (id < 0)
+				return id;
+
+			ret = wait_for_completion_interruptible(&reqs[id].acked);
+			if (ret)
+				return ret;
+			//memcpy(b_buf, dev->data + pos, b_len);
+		}
+
+		/* Increment counters */
+		pos += b_len;
+		*nr_bytes += b_len;
+	}
+
+	return 0;
+}
+
+/* queue callback function */
+static blk_status_t queue_rq(struct blk_mq_hw_ctx *hctx,
+			     const struct blk_mq_queue_data *bd)
+{
+	unsigned int nr_bytes = 0;
+	blk_status_t status = BLK_STS_OK;
+	struct request *rq = bd->rq;
+
+	/* Start request serving procedure */
+	blk_mq_start_request(rq);
+
+	if (do_request(rq, &nr_bytes) != 0) {
+		status = BLK_STS_IOERR;
+	}
+
+	/* Notify kernel about processed nr_bytes */
+	if (blk_update_request(rq, status, nr_bytes)) {
+		/* Shouldn't fail */
+		BUG();
+	}
+
+	/* Stop request serving procedure */
+	__blk_mq_end_request(rq, status);
+
+	return status;
+}
+
+static struct blk_mq_ops mq_ops = {
+	.queue_rq = queue_rq,
+};
+
+#if 0
 /*
  * Check if request is within bounds and aligned on cheeze logical blocks.
  */
@@ -272,9 +385,13 @@ static blk_qc_t cheeze_make_request(struct request_queue *queue,
 
 	return BLK_QC_T_NONE;
 }
+#endif
 
 static const struct block_device_operations cheeze_fops = {
-	.owner = THIS_MODULE
+	.owner = THIS_MODULE,
+	.open = cheeze_open,
+	.release = cheeze_release,
+	.ioctl = cheeze_ioctl
 };
 
 static ssize_t disksize_show(struct device *dev,
@@ -324,6 +441,40 @@ static struct attribute_group cheeze_disk_attr_group = {
 	.attrs = cheeze_disk_attrs,
 };
 
+#ifndef blk_mq_init_sq_queue
+/*
+ * Helper for setting up a queue with mq ops, given queue depth, and
+ * the passed in mq ops flags.
+ */
+static struct request_queue *blk_mq_init_sq_queue(struct blk_mq_tag_set *set,
+                                          const struct blk_mq_ops *ops,
+                                          unsigned int queue_depth,
+                                          unsigned int set_flags)
+{
+       struct request_queue *q;
+       int ret;
+
+       memset(set, 0, sizeof(*set));
+       set->ops = ops;
+       set->nr_hw_queues = 1;
+       set->queue_depth = queue_depth;
+       set->numa_node = NUMA_NO_NODE;
+       set->flags = set_flags;
+
+       ret = blk_mq_alloc_tag_set(set);
+       if (ret)
+               return ERR_PTR(ret);
+
+       q = blk_mq_init_queue(set);
+       if (IS_ERR(q)) {
+               blk_mq_free_tag_set(set);
+               return q;
+       }
+
+       return q;
+}
+#endif
+
 static int create_device(void)
 {
 	int ret;
@@ -337,7 +488,7 @@ static int create_device(void)
 		goto out;
 	}
 
-	cheeze_disk->queue = blk_alloc_queue(GFP_KERNEL);
+	cheeze_disk->queue = blk_mq_init_sq_queue(&tag_set, &mq_ops, 128, BLK_MQ_F_SHOULD_MERGE);
 	if (!cheeze_disk->queue) {
 		pr_err("%s %d: Error allocating disk queue for device\n",
 		       __func__, __LINE__);
@@ -345,14 +496,13 @@ static int create_device(void)
 		goto out_put_disk;
 	}
 
-	blk_queue_make_request(cheeze_disk->queue, cheeze_make_request);
+	// blk_queue_make_request(cheeze_disk->queue, cheeze_make_request);
 
 	cheeze_disk->major = cheeze_major;
 	cheeze_disk->first_minor = 0;
 	cheeze_disk->fops = &cheeze_fops;
 	cheeze_disk->private_data = NULL;
 	snprintf(cheeze_disk->disk_name, 16, "cheeze%d", 0);
-	cheeze_disk->queue->backing_dev_info->capabilities |= BDI_CAP_SYNCHRONOUS_IO;
 
 	/* Actual capacity set using sysfs (/sys/block/cheeze<id>/disksize) */
 	set_capacity(cheeze_disk, 0);

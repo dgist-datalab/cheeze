@@ -21,7 +21,6 @@ static inline bool empty(void) {
 
 // Lock must be held and freed before and after push()
 int cheeze_push(const int rw,
-		 const unsigned int index,
 		 const unsigned int offset,
 		 const unsigned int size,
 		 void *addr) {
@@ -40,7 +39,6 @@ int cheeze_push(const int rw,
 
 	reinit_completion(&req->acked);
 	req->rw = rw;
-	req->index = index;
 	req->offset = offset;
 	req->size = size;
 	req->addr = addr;
@@ -48,11 +46,10 @@ int cheeze_push(const int rw,
 
 	pr_debug("req[%d]\n"
 		"  rw=%d\n"
-		"  index=%u\n"
 		"  offset=%u\n"
 		"  size=%u\n"
 		"  addr=%p\n",
-			rear, rw, index, offset, size, addr);
+			rear, rw, offset, size, addr);
 
 	up(&mutex);	/* Unlock the buffer */
 	up(&items);	/* Announce available item */

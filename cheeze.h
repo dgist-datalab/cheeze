@@ -22,7 +22,6 @@
 
 struct cheeze_req {
 	int rw;
-	unsigned int index;
 	unsigned int offset;
 	unsigned int size;
 	int id;
@@ -40,7 +39,6 @@ int cheeze_chr_init_module(void);
 // queue.c
 extern struct cheeze_req *reqs;
 int cheeze_push(const int rw,
-		 const unsigned int index,
 		 const unsigned int offset,
 		 const unsigned int size,
 		 void *addr);

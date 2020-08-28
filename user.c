@@ -17,7 +17,6 @@
 
 struct cheeze_req {
 	int rw;
-	unsigned int index;
 	unsigned int offset;
 	unsigned int size;
 	int id;
@@ -138,7 +137,7 @@ int main() {
 		// write(1, buf, req->size);
 		// printf("\n");
 
-		req->user_buf = mem + (req->size * req->index) + req->offset;
+		req->user_buf = mem + req->offset;
 
 		// Sanity check
 		// memset(req->user_buf, 0, req->size);

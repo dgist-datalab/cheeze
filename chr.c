@@ -73,11 +73,10 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 
 	pr_debug("%s: req[%d]\n"
 		"    rw=%d\n"
-		"    index=%u\n"
 		"    offset=%u\n"
 		"    size=%u\n"
 		"    addr=%p\n",
-			__func__, req.id, req.rw, req.index, req.offset, req.size, req.addr);
+			__func__, req.id, req.rw, req.offset, req.size, req.addr);
 
 	switch (req.rw) {
 	case OP_READ:
