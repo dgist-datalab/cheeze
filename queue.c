@@ -56,7 +56,8 @@ int cheeze_push(const int rw,
 	return id;
 }
 
-struct cheeze_req *cheeze_pop(void) {
+// Queue is locked until pop
+struct cheeze_req *cheeze_peek(void) {
 	int id, ret;
 
 	ret = down_interruptible(&items);	/* Wait for available item */
@@ -68,13 +69,15 @@ struct cheeze_req *cheeze_pop(void) {
 		return NULL;
 
 	id = (front + 1) % CHEEZE_QUEUE_SIZE;	/* Remove the item */
-	pr_info("popping %d(%d)\n", id, reqs[id].id);
+
+	return reqs + id;
+}
+
+void cheeze_pop(int id) {
 	front = id;
 
 	up(&mutex);	/* Unlock the buffer */
 	up(&slots);	/* Announce available slot */
-
-	return reqs + id;
 }
 
 void cheeze_queue_init(void) {

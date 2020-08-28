@@ -42,10 +42,10 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 		return -EINVAL;
 	}
 
-	req = cheeze_pop();
+	req = cheeze_peek();
 	if (unlikely(req == NULL)) {
 		WARN_ON(1);
-		pr_err("%s: failed to pop queue\n", __func__);
+		pr_err("%s: failed to peek queue\n", __func__);
 		return -ERESTARTSYS;
 	}
 

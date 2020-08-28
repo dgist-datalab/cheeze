@@ -119,6 +119,8 @@ static int do_request(struct request *rq, unsigned int *nr_bytes)
 			return ret;
 		}
 
+		cheeze_pop(id);
+
 		/* Increment counters */
 		pos += b_len;
 		*nr_bytes += b_len;
