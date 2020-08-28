@@ -109,12 +109,14 @@ static int do_request(struct request *rq, unsigned int *nr_bytes)
 
 		id = cheeze_push(rw, pos, b_len, b_buf);
 		if (unlikely(id < 0)) {
+			pr_err("%s(%d): %d\n", __func__, __LINE__, id);
 			WARN_ON(1);
 			return id;
 		}
 
 		ret = wait_for_completion_interruptible(&reqs[id].acked);
 		if (unlikely(ret)) {
+			pr_err("%s(%d): %d\n", __func__, __LINE__, ret);
 			WARN_ON(1);
 			return ret;
 		}
