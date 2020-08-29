@@ -114,12 +114,7 @@ static int do_request(struct request *rq, unsigned int *nr_bytes)
 			return id;
 		}
 
-		ret = wait_for_completion_interruptible(&reqs[id].acked);
-		if (unlikely(ret)) {
-			pr_err("%s(%d): %d\n", __func__, __LINE__, ret);
-			WARN_ON(1);
-			return ret;
-		}
+		wait_for_completion(&reqs[id].acked);
 
 		cheeze_pop(id);
 
