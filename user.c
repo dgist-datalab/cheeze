@@ -137,7 +137,7 @@ int main() {
 		// write(1, buf, req->size);
 		// printf("\n");
 
-		req->user_buf = mem + req->offset;
+		req->user_buf = mem + (req->offset * 4096UL);
 
 		// Sanity check
 		// memset(req->user_buf, 0, req->size);

@@ -63,11 +63,12 @@ static int cheeze_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 static int do_request(struct request *rq, unsigned int *nr_bytes)
 {
 	int ret = 0, id, rw = 0;
-	unsigned long b_len = 0;
+	unsigned long b_len = 0, l;
 	struct bio_vec bvec;
 	struct req_iterator iter;
 	loff_t pos = blk_rq_pos(rq) << SECTOR_SHIFT;
 	void *b_buf;
+	int is_zero;
 
 	switch (req_op(rq)) {
 	case REQ_OP_FLUSH:
@@ -107,7 +108,18 @@ static int do_request(struct request *rq, unsigned int *nr_bytes)
 
 		pr_debug("sector: %ld, pos: %lld, len: %ld, dest_buf: %p\n", blk_rq_pos(rq), pos, b_len, b_buf);
 
-		id = cheeze_push(rw, pos, b_len, b_buf);
+/*
+		is_zero = 1;
+		for (l; l != b_len; l++) {
+			if (*(char*)(b_buf + l) != '\0') {
+				is_zero = 0;
+				break;
+			}
+		}
+		pr_info("%p: is_zero: %d\n", b_buf, is_zero);
+*/
+
+		id = cheeze_push(rw, pos / 4096, b_len, b_buf);
 		if (unlikely(id < 0)) {
 			pr_err("%s(%d): %d\n", __func__, __LINE__, id);
 			WARN_ON(1);
