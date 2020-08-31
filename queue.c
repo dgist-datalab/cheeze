@@ -23,8 +23,13 @@ int cheeze_push(const int rw,
 	struct cheeze_req *req;
 	int id, ret;
 
-	down(&slots);	/* Wait for available slot */
-	down(&mutex);	/* Lock the buffer */
+	ret = down_interruptible(&slots);	/* Wait for available slot */
+	if (unlikely(ret < 0))
+		return ret;
+
+	ret = down_interruptible(&mutex);	/* Lock the buffer */
+	if (unlikely(ret < 0))
+		return ret;
 
 	id = (rear + 1) % CHEEZE_QUEUE_SIZE; // XXX: Overflow?
 	// pr_info("pushing %d(%d)\n", id, reqs[id].id);
@@ -55,8 +60,13 @@ int cheeze_push(const int rw,
 struct cheeze_req *cheeze_peek(void) {
 	int id, ret;
 
-	down(&items);	/* Wait for available item */
-	down(&mutex);	/* Lock the buffer */
+	ret = down_interruptible(&items);	/* Wait for available item */
+	if (unlikely(ret < 0))
+		return NULL;
+
+	ret = down_interruptible(&mutex);	/* Lock the buffer */
+	if (unlikely(ret < 0))
+		return NULL;
 
 	id = (front + 1) % CHEEZE_QUEUE_SIZE;	/* Remove the item */
 
