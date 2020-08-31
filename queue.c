@@ -39,6 +39,7 @@ int cheeze_push(struct request *rq, unsigned int *nr_bytes) {
 
 	req->rq = rq;
 	req->nr_bytes = nr_bytes;
+	req->user.rw = rq_data_dir(rq);
 	req->user.pos = (blk_rq_pos(rq) << SECTOR_SHIFT) >> CHEEZE_LOGICAL_BLOCK_SHIFT;
 	req->user.len = blk_rq_bytes(rq);
 	req->user.id = id;

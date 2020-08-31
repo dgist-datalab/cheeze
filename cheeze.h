@@ -28,13 +28,13 @@
 
 struct cheeze_req_user {
 	int id;
+	int rw;
 	char *buf;
 	unsigned int pos; // sector_t but divided by 4096
 	unsigned int len;
 } __attribute__((aligned(8), packed));
 
 struct cheeze_req {
-	int rw;
 	int ret;
 	unsigned int *nr_bytes;
 	struct request *rq;
