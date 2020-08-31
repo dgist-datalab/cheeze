@@ -17,6 +17,7 @@
 
 struct cheeze_req_user {
 	int id;
+	int rw;
 	char *buf;
 	unsigned int pos; // sector_t
 	unsigned int len;
