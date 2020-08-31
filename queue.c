@@ -22,15 +22,10 @@ struct cheeze_req *reqs = NULL;
 // Lock must be held and freed before and after push()
 int cheeze_push(struct request *rq, unsigned int *nr_bytes) {
 	struct cheeze_req *req;
-	int id, ret;
+	int id;
 
-	ret = down_interruptible(&slots);	/* Wait for available slot */
-	if (unlikely(ret < 0))
-		return ret;
-
-	ret = down_interruptible(&mutex);	/* Lock the buffer */
-	if (unlikely(ret < 0))
-		return ret;
+	down(&slots); /* Wait for available slot */
+	down(&mutex); /* Lock the buffer */
 
 	id = (rear + 1) % CHEEZE_QUEUE_SIZE; // XXX: Overflow?
 	// pr_info("pushing %d(%d)\n", id, reqs[id].id);
@@ -64,9 +59,8 @@ struct cheeze_req *cheeze_peek(void) {
 	if (unlikely(ret < 0))
 		return NULL;
 
-	ret = down_interruptible(&mutex);	/* Lock the buffer */
-	if (unlikely(ret < 0))
-		return NULL;
+	/* Lock the buffer */
+	down(&mutex);
 
 	id = (front + 1) % CHEEZE_QUEUE_SIZE;	/* Remove the item */
 

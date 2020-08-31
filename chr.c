@@ -16,6 +16,7 @@
 #include <linux/genhd.h>
 #include <linux/backing-dev.h>
 #include <linux/blk-mq.h>
+#include <linux/sched/signal.h>
 
 #include "cheeze.h"
 
@@ -127,13 +128,11 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 
 	req = cheeze_peek();
 	if (unlikely(req == NULL)) {
-		WARN_ON(1);
 		pr_err("%s: failed to peek queue\n", __func__);
 		return -ERESTARTSYS;
 	}
 
 	if (unlikely(copy_to_user(buf, &req->user, count))) {
-		WARN_ON(1);
 		pr_err("%s: copy_to_user() failed\n", __func__);
 		return -EFAULT;
 	}
@@ -148,14 +147,12 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 	struct cheeze_req_user ureq;
 
 	if (unlikely(count != sizeof(struct cheeze_req_user))) {
-		WARN_ON(1);
 		pr_err("%s: size mismatch: %ld vs %ld\n",
 			__func__, count, sizeof(struct cheeze_req_user));
 		return -EINVAL;
 	}
 
 	if (unlikely(copy_from_user(&ureq, buf, sizeof(ureq)))) {
-		WARN_ON(1);
 		pr_err("%s: failed to fill req\n", __func__);
 		return -EFAULT;
 	}

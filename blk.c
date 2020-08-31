@@ -35,11 +35,13 @@ struct class *cheeze_chr_class;
 
 static int cheeze_open(struct block_device *dev, fmode_t mode)
 {
+	pr_info("%s\n", __func__);
 	return 0;
 }
 
 static void cheeze_release(struct gendisk *gdisk, fmode_t mode)
 {
+	pr_info("%s\n", __func__);
 }
 
 static int cheeze_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
@@ -57,20 +59,9 @@ static int do_request(struct request *rq, unsigned int *nr_bytes)
 	struct cheeze_req *req;
 
 	id = cheeze_push(rq, nr_bytes);
-	if (unlikely(id < 0)) {
-		pr_err("%s(%d): %d\n", __func__, __LINE__, id);
-		WARN_ON(1);
-		return id;
-	}
-
 	req = reqs + id;
 
-	ret = wait_for_completion_interruptible(&req->acked);
-	if (unlikely(ret)) {
-		pr_err("%s(%d): %d\n", __func__, __LINE__, ret);
-		WARN_ON(1);
-		return ret;
-	}
+	wait_for_completion(&req->acked);
 
 	ret = req->ret;
 	cheeze_pop(id);
