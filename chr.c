@@ -162,7 +162,7 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 
 	pr_debug("write: req[%d]\n"
 		"  buf=%px\n"
-		"  pos=%lu\n"
+		"  pos=%u\n"
 		"  len=%u\n",
 			ureq.id, ureq.buf, ureq.pos, ureq.len);
 

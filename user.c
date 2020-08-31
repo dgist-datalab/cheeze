@@ -18,7 +18,7 @@
 struct cheeze_req_user {
 	int id;
 	char *buf;
-	unsigned long pos; // sector_t
+	unsigned int pos; // sector_t
 	unsigned int len;
 } __attribute__((aligned(8), packed));
 
@@ -74,11 +74,11 @@ int main() {
 		if (r < 0)
 			break;
 
-		req.buf = mem + req.pos;
+		req.buf = mem + (req.pos * 4096UL);
 
 /*
 		printf("req[%d]\n"
-			"  pos=%lu\n"
+			"  pos=%u\n"
 			"  len=%u\n"
 			"mem=%p\n"
 			"  pos=%p\n",
