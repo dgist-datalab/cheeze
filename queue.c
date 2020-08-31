@@ -6,6 +6,10 @@
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/semaphore.h>
+#include <linux/blkdev.h>
+#include <linux/genhd.h>
+#include <linux/backing-dev.h>
+#include <linux/blk-mq.h>
 
 #include "cheeze.h"
 
@@ -16,10 +20,7 @@ static struct semaphore mutex, slots, items;
 struct cheeze_req *reqs = NULL;
 
 // Lock must be held and freed before and after push()
-int cheeze_push(const int rw,
-		 const unsigned int offset,
-		 const unsigned int size,
-		 void *addr) {
+int cheeze_push(struct request *rq, unsigned int *nr_bytes) {
 	struct cheeze_req *req;
 	int id, ret;
 
@@ -36,19 +37,17 @@ int cheeze_push(const int rw,
 	rear = id;
 	req = reqs + id;		/* Insert the item */
 
+	req->rq = rq;
+	req->nr_bytes = nr_bytes;
+	req->user.pos = blk_rq_pos(rq) << SECTOR_SHIFT;
+	req->user.len = blk_rq_bytes(rq);
+	req->user.id = id;
 	reinit_completion(&req->acked);
-	req->rw = rw;
-	req->offset = offset;
-	req->size = size;
-	req->addr = addr;
-	req->id = id;
 
 	pr_debug("req[%d]\n"
-		"  rw=%d\n"
-		"  offset=%u\n"
-		"  size=%u\n"
-		"  addr=%p\n",
-			rear, rw, offset, size, addr);
+		"  pos=%lu\n"
+		"  len=%u\n",
+			rear, req->user.pos, req->user.len);
 
 	up(&mutex);	/* Unlock the buffer */
 	up(&items);	/* Announce available item */

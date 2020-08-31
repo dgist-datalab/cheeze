@@ -5,12 +5,17 @@
 
 #define pr_fmt(fmt) "cheeze_chr: " fmt
 
+#include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/cdev.h>
 #include <linux/completion.h>
+#include <linux/blkdev.h>
+#include <linux/genhd.h>
+#include <linux/backing-dev.h>
+#include <linux/blk-mq.h>
 
 #include "cheeze.h"
 
@@ -19,6 +24,84 @@
 
 static struct cdev cheeze_chr_cdev;
 static DECLARE_WAIT_QUEUE_HEAD(cheeze_chr_wait);
+
+static int do_request(struct cheeze_req *req)
+{
+	int rw = 0;
+	unsigned long b_len = 0;
+	struct bio_vec bvec;
+	struct req_iterator iter;
+	loff_t off = 0;
+	void *b_buf;
+	struct request *rq;
+	unsigned int *nr_bytes;
+
+	rq = req->rq;
+	nr_bytes = req->nr_bytes;
+
+	switch (req_op(rq)) {
+	case REQ_OP_FLUSH:
+		pr_warn("ignoring REQ_OP_FLUSH\n");
+		WARN_ON(1);
+		return -EIO;
+		break;
+	case REQ_OP_WRITE_ZEROES:
+		pr_warn("ignoring REQ_OP_WRITE_ZEROES\n");
+		WARN_ON(1);
+		return -EIO;
+		break;
+	case REQ_OP_DISCARD:
+		pr_warn("ignoring REQ_OP_DISCARD\n");
+		WARN_ON(1);
+		return -EIO;
+		break;
+	case REQ_OP_WRITE:
+		rw = 1;
+		/* fallthrough */
+	case REQ_OP_READ:
+		break;
+	default:
+		WARN_ON(1);
+		return -EIO;
+		break;
+	}
+
+	pr_debug("%s++\n", __func__);
+
+	/* Iterate over all requests segments */
+	rq_for_each_segment(bvec, rq, iter) {
+		b_len = bvec.bv_len;
+
+		/* Get pointer to the data */
+		b_buf = page_address(bvec.bv_page) + bvec.bv_offset;
+
+		pr_debug("off: %lld, len: %ld, dest_buf: %px, user_buf: %px\n", off, b_len, b_buf, req->user.buf);
+
+		if (rw) {
+			// Write
+			if (unlikely(copy_to_user(req->user.buf + off, b_buf, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
+				WARN_ON(1);
+				pr_err("%s: copy_to_user() failed\n", __func__);
+				return -EFAULT;
+			}
+		} else {
+			// Read
+			if (unlikely(copy_from_user(b_buf, req->user.buf + off, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
+				WARN_ON(1);
+				pr_err("%s: copy_from_user() failed\n", __func__);
+				return -EFAULT;
+			}
+		}
+
+		/* Increment counters */
+		off += b_len;
+		*nr_bytes += b_len;
+	}
+
+	pr_debug("%s--\n", __func__);
+
+	return 0;
+}
 
 static int cheeze_chr_open(struct inode *inode, struct file *filp)
 {
@@ -35,9 +118,9 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 {
 	struct cheeze_req *req;
 
-	if (unlikely(count != sizeof(struct cheeze_req))) {
+	if (unlikely(count != sizeof(struct cheeze_req_user))) {
 		pr_err("%s: size mismatch: %ld vs %ld\n",
-			__func__, count, sizeof(*req));
+			__func__, count, sizeof(struct cheeze_req_user));
 		WARN_ON(1);
 		return -EINVAL;
 	}
@@ -49,7 +132,7 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 		return -ERESTARTSYS;
 	}
 
-	if (unlikely(copy_to_user(buf, req, count))) {
+	if (unlikely(copy_to_user(buf, &req->user, count))) {
 		WARN_ON(1);
 		pr_err("%s: copy_to_user() failed\n", __func__);
 		return -EFAULT;
@@ -61,47 +144,35 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 			    size_t count, loff_t *ppos)
 {
-	struct cheeze_req req;
+	struct cheeze_req *req;
+	struct cheeze_req_user ureq;
 
-	if (unlikely(count != sizeof(req))) {
+	if (unlikely(count != sizeof(struct cheeze_req_user))) {
 		WARN_ON(1);
 		pr_err("%s: size mismatch: %ld vs %ld\n",
-			__func__, count, sizeof(req));
+			__func__, count, sizeof(struct cheeze_req_user));
 		return -EINVAL;
 	}
 
-	if (unlikely(copy_from_user(&req, buf, sizeof(req)))) {
+	if (unlikely(copy_from_user(&ureq, buf, sizeof(ureq)))) {
 		WARN_ON(1);
 		pr_err("%s: failed to fill req\n", __func__);
 		return -EFAULT;
 	}
 
-	pr_debug("%s: req[%d]\n"
-		"    rw=%d\n"
-		"    offset=%u\n"
-		"    size=%u\n"
-		"    addr=%p\n",
-			__func__, req.id, req.rw, req.offset, req.size, req.addr);
+	pr_debug("write: req[%d]\n"
+		"  buf=%px\n"
+		"  pos=%lu\n"
+		"  len=%u\n",
+			ureq.id, ureq.buf, ureq.pos, ureq.len);
 
-	switch (req.rw) {
-	case READ:
-		if (unlikely(copy_from_user(req.addr, req.user_buf, req.size))) {
-			WARN_ON(1);
-			pr_err("%s: copy_from_user() failed\n", __func__);
-			return -EFAULT;
-		}
-		break;
-	case WRITE:
-		if (unlikely(copy_to_user(req.user_buf, req.addr, req.size))) {
-			WARN_ON(1);
-			pr_err("%s: copy_to_user() failed\n", __func__);
-			return -EFAULT;
-		}
-		break;
-	}
+	req = reqs + ureq.id;
+	req->user.buf = ureq.buf;
 
-	complete(&reqs[req.id].acked);
-	pr_debug("%s: reqs[%d].acked = 1\n", __func__, req.id);
+	// Process bio
+	req->ret = do_request(req);
+
+	complete(&req->acked);
 
 	return (ssize_t)count;
 }

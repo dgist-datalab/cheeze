@@ -22,15 +22,6 @@
 
 #include "cheeze.h"
 
-#define SECTOR_SHIFT		9
-#define SECTOR_SIZE		(1 << SECTOR_SHIFT)
-#define SECTORS_PER_PAGE_SHIFT	(PAGE_SHIFT - SECTOR_SHIFT)
-#define SECTORS_PER_PAGE	(1 << SECTORS_PER_PAGE_SHIFT)
-#define CHEEZE_LOGICAL_BLOCK_SHIFT 12
-#define CHEEZE_LOGICAL_BLOCK_SIZE	(1 << CHEEZE_LOGICAL_BLOCK_SHIFT)
-#define CHEEZE_SECTOR_PER_LOGICAL_BLOCK	(1 << \
-	(CHEEZE_LOGICAL_BLOCK_SHIFT - SECTOR_SHIFT))
-
 // cheeze is intentionally designed to expose 1 disk only
 
 /* Globals */
@@ -62,87 +53,29 @@ static int cheeze_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 /* Serve requests */
 static int do_request(struct request *rq, unsigned int *nr_bytes)
 {
-	int ret = 0, id, rw = 0;
-	unsigned long b_len = 0, l;
-	struct bio_vec bvec;
-	struct req_iterator iter;
-	loff_t pos = blk_rq_pos(rq) << SECTOR_SHIFT;
-	void *b_buf;
-	int is_zero;
+	int ret, id;
+	struct cheeze_req *req;
 
-	switch (req_op(rq)) {
-	case REQ_OP_FLUSH:
-		pr_warn("ignoring REQ_OP_FLUSH\n");
+	id = cheeze_push(rq, nr_bytes);
+	if (unlikely(id < 0)) {
+		pr_err("%s(%d): %d\n", __func__, __LINE__, id);
 		WARN_ON(1);
-		return -EIO;
-		break;
-	case REQ_OP_WRITE_ZEROES:
-		pr_warn("ignoring REQ_OP_WRITE_ZEROES\n");
-		WARN_ON(1);
-		return -EIO;
-		break;
-	case REQ_OP_DISCARD:
-		pr_warn("ignoring REQ_OP_DISCARD\n");
-		WARN_ON(1);
-		return -EIO;
-		break;
-	case REQ_OP_WRITE:
-		rw = 1;
-		/* fallthrough */
-	case REQ_OP_READ:
-		break;
-	default:
-		WARN_ON(1);
-		return -EIO;
-		break;
+		return id;
 	}
 
-	pr_debug("%s++\n", __func__);
+	req = reqs + id;
 
-	/* Iterate over all requests segments */
-	rq_for_each_segment(bvec, rq, iter) {
-		b_len = bvec.bv_len;
-
-		/* Get pointer to the data */
-		b_buf = page_address(bvec.bv_page) + bvec.bv_offset;
-
-		pr_debug("sector: %ld, pos: %lld, len: %ld, dest_buf: %p\n", blk_rq_pos(rq), pos, b_len, b_buf);
-
-/*
-		is_zero = 1;
-		for (l; l != b_len; l++) {
-			if (*(char*)(b_buf + l) != '\0') {
-				is_zero = 0;
-				break;
-			}
-		}
-		pr_info("%p: is_zero: %d\n", b_buf, is_zero);
-*/
-
-		id = cheeze_push(rw, pos / 4096, b_len, b_buf);
-		if (unlikely(id < 0)) {
-			pr_err("%s(%d): %d\n", __func__, __LINE__, id);
-			WARN_ON(1);
-			return id;
-		}
-
-		ret = wait_for_completion_interruptible(&reqs[id].acked);
-		if (unlikely(ret)) {
-			pr_err("%s(%d): %d\n", __func__, __LINE__, ret);
-			WARN_ON(1);
-			return ret;
-		}
-
-		cheeze_pop(id);
-
-		/* Increment counters */
-		pos += b_len;
-		*nr_bytes += b_len;
+	ret = wait_for_completion_interruptible(&req->acked);
+	if (unlikely(ret)) {
+		pr_err("%s(%d): %d\n", __func__, __LINE__, ret);
+		WARN_ON(1);
+		return ret;
 	}
 
-	pr_debug("%s--\n", __func__);
+	ret = req->ret;
+	cheeze_pop(id);
 
-	return 0;
+	return ret;
 }
 
 /* queue callback function */

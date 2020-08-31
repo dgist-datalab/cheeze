@@ -6,6 +6,15 @@
 #ifndef __CHEEZE_H
 #define __CHEEZE_H
 
+#define SECTOR_SHIFT		9
+#define SECTOR_SIZE		(1 << SECTOR_SHIFT)
+#define SECTORS_PER_PAGE_SHIFT	(PAGE_SHIFT - SECTOR_SHIFT)
+#define SECTORS_PER_PAGE	(1 << SECTORS_PER_PAGE_SHIFT)
+#define CHEEZE_LOGICAL_BLOCK_SHIFT 12
+#define CHEEZE_LOGICAL_BLOCK_SIZE	(1 << CHEEZE_LOGICAL_BLOCK_SHIFT)
+#define CHEEZE_SECTOR_PER_LOGICAL_BLOCK	(1 << \
+	(CHEEZE_LOGICAL_BLOCK_SHIFT - SECTOR_SHIFT))
+
 #define CHEEZE_QUEUE_SIZE 4096
 
 // #define DEBUG
@@ -17,13 +26,19 @@
   #define msleep_dbg(...) ((void)0)
 #endif
 
+struct cheeze_req_user {
+	int id;
+	char *buf;
+	unsigned long pos; // sector_t
+	unsigned int len;
+} __attribute__((aligned(8), packed));
+
 struct cheeze_req {
 	int rw;
-	unsigned int offset;
-	unsigned int size;
-	int id;
-	void *addr;
-	void *user_buf;
+	int ret;
+	unsigned int *nr_bytes;
+	struct request *rq;
+	struct cheeze_req_user user;
 	struct completion acked;
 } __attribute__((aligned(8), packed));
 
@@ -35,10 +50,7 @@ int cheeze_chr_init_module(void);
 
 // queue.c
 extern struct cheeze_req *reqs;
-int cheeze_push(const int rw,
-		 const unsigned int offset,
-		 const unsigned int size,
-		 void *addr);
+int cheeze_push(struct request *rq, unsigned int *nr_bytes);
 struct cheeze_req *cheeze_peek(void);
 void cheeze_pop(int id);
 void cheeze_queue_init(void);

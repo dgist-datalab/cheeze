@@ -15,14 +15,11 @@
 #include <unistd.h>
 #include <time.h>
 
-struct cheeze_req {
-	int rw;
-	unsigned int offset;
-	unsigned int size;
+struct cheeze_req_user {
 	int id;
-	void *addr;
-	void *user_buf;
-	char acked[32]; // struct completion acked;
+	char *buf;
+	unsigned long pos; // sector_t
+	unsigned int len;
 } __attribute__((aligned(8), packed));
 
 #define COPY_TARGET "/tmp/vdb"
@@ -47,36 +44,10 @@ static inline uint64_t ts_to_ns(struct timespec* ts) {
 }
 
 int main() {
-	struct timespec start, end;
-	uint64_t trans_time = 0;
-	struct sysinfo info;
-	int memfd, chrfd, copyfd;
-	int ret;
+	int chrfd, copyfd;
 	char *mem;
-	char buf[4096 * 4];
 	ssize_t r;
-	struct cheeze_req *req = (struct cheeze_req *)buf;
-
-/*
-	ret = sysinfo(&info);
-	if (ret < 0) {
-		perror("Failed to query sysinfo()");
-		return 1;
-	}
-
-	memfd = open("/dev/mem", O_RDWR | O_SYNC);
-	if (memfd < 0) {
-		perror("Failed to open /dev/mem");
-		return 1;
-	}
-
-	mem = mmap(NULL, info.totalram, PROT_READ | PROT_WRITE, MAP_SHARED, memfd, 0);
-	if (mem == MAP_FAILED) {
-		perror("Failed to mmap plain device path");
-		return 1;
-	}
-	close(memfd);
-*/
+	struct cheeze_req_user req;
 
 	chrfd = open("/dev/cheeze_chr", O_RDWR);
 	if (chrfd < 0) {
@@ -90,12 +61,6 @@ int main() {
 		return 1;
 	}
 
-/*
-	mem = malloc(fdlength(copyfd));
-	printf("malloc'ed\n");
-	read(copyfd, mem, fdlength(copyfd));
-	printf("read'ed\n");
-*/
 	mem = mmap(NULL, fdlength(copyfd), PROT_READ | PROT_WRITE, MAP_SHARED, copyfd, 0);
 	if (mem == MAP_FAILED) {
 		perror("Failed to mmap copy path");
@@ -105,48 +70,25 @@ int main() {
 	close(copyfd);
 
 	while (1) {
-//	while ((r = read(chrfd, req, sizeof(struct cheeze_req))) >= 0) {
-		//clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-		r = read(chrfd, req, sizeof(struct cheeze_req));
-		//clock_gettime(CLOCK_MONOTONIC_RAW, &end);
-		//trans_time += (ts_to_ns(&end) - ts_to_ns(&start));
-		//printf("Transmission time: %ld.%.9ld\n", trans_time / 1000000000L, trans_time % 1000000000L);
+		r = read(chrfd, &req, sizeof(struct cheeze_req_user));
 		if (r < 0)
 			break;
 
+		req.buf = mem + req.pos;
+
 /*
-		printf("New req[%lu]\n"
-			"  rw=%d\n"
-			"  index=%u\n"
-			"  offset=%u\n"
-			"  size=%u\n"
-			"  addr=%p\n",
-				req->id, req->rw, req->index, req->offset, req->size, req->addr);
+		printf("req[%d]\n"
+			"  pos=%lu\n"
+			"  len=%u\n"
+			"mem=%p\n"
+			"  pos=%p\n",
+				req.id, req.pos, req.len, mem, req.buf);
 */
 
-		// printf("Before: ");
-		// memcpy(buf, mem + req->addr, req->size);
-		// write(1, buf, req->size);
-
-		// read(copyfd, mem + req->addr, req->size);
-		// read(copyfd, buf + sizeof(struct cheeze_req), req->size);
-		// memcpy(mem + req->addr, buf, req->size);
-
-		// printf("\nAfter: ");
-		// memcpy(buf, mem + req->addr, req->size);
-		// write(1, buf, req->size);
-		// printf("\n");
-
-		req->user_buf = mem + (req->offset * 4096UL);
-
 		// Sanity check
-		// memset(req->user_buf, 0, req->size);
+		// memset(req.buf, 0, req.size);
 
-		//clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-		write(chrfd, req, sizeof(struct cheeze_req));
-		//clock_gettime(CLOCK_MONOTONIC_RAW, &end);
-		//trans_time += (ts_to_ns(&end) - ts_to_ns(&start));
-		//printf("Write time: %ld.%.9ld\n", trans_time / 1000000000L, trans_time % 1000000000L);
+		write(chrfd, &req, sizeof(struct cheeze_req_user));
 	}
 
 	return 0;
