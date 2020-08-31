@@ -275,11 +275,13 @@ static void destroy_device(void)
 	sysfs_remove_group(&disk_to_dev(cheeze_disk)->kobj,
 			   &cheeze_disk_attr_group);
 
+	if (cheeze_disk->queue)
+		blk_cleanup_queue(cheeze_disk->queue);
+
 	del_gendisk(cheeze_disk);
 	put_disk(cheeze_disk);
 
-	if (cheeze_disk->queue)
-		blk_cleanup_queue(cheeze_disk->queue);
+	cheeze_disk = NULL;
 }
 
 static int __init cheeze_init(void)
