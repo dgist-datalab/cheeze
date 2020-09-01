@@ -225,14 +225,13 @@ static int create_device(void)
 	blk_queue_logical_block_size(cheeze_disk->queue,
 				     CHEEZE_LOGICAL_BLOCK_SIZE);
 	blk_queue_io_min(cheeze_disk->queue, PAGE_SIZE);
-	blk_queue_io_opt(cheeze_disk->queue, PAGE_SIZE);
-	blk_queue_max_hw_sectors(cheeze_disk->queue, BLK_DEF_MAX_SECTORS);
+	blk_queue_max_hw_sectors(cheeze_disk->queue, 4096); // 512 * 4096 = 2MiB
 
 	// Set discard capability
 	cheeze_disk->queue->limits.discard_granularity = PAGE_SIZE;
-	blk_queue_max_discard_sectors(cheeze_disk->queue, UINT_MAX);
 	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, cheeze_disk->queue);
-	blk_queue_max_write_zeroes_sectors(cheeze_disk->queue, UINT_MAX);
+	blk_queue_max_discard_sectors(cheeze_disk->queue, 4096); // 512 * 4096 = 2MiB
+	blk_queue_max_write_zeroes_sectors(cheeze_disk->queue, 4096); // 512 * 4096 = 2MiB
 
 	add_disk(cheeze_disk);
 
