@@ -53,12 +53,18 @@ static int cheeze_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 }
 
 /* Serve requests */
-static int do_request(struct request *rq, unsigned int *nr_bytes)
+static int do_request(struct request *rq)
 {
 	int ret, id;
 	struct cheeze_req *req;
 
-	id = cheeze_push(rq, nr_bytes);
+	id = cheeze_push(rq);
+	if (unlikely(id < 0)) {
+		if (id == SKIP)
+			return 0;
+		return id;
+	}
+
 	req = reqs + id;
 
 	wait_for_completion(&req->acked);
@@ -73,27 +79,21 @@ static int do_request(struct request *rq, unsigned int *nr_bytes)
 static blk_status_t queue_rq(struct blk_mq_hw_ctx *hctx,
 			     const struct blk_mq_queue_data *bd)
 {
-	unsigned int nr_bytes = 0;
-	blk_status_t status = BLK_STS_OK;
+	int ret;
 	struct request *rq = bd->rq;
 
 	/* Start request serving procedure */
 	blk_mq_start_request(rq);
 
-	if (unlikely(do_request(rq, &nr_bytes) != 0)) {
-		status = BLK_STS_IOERR;
-	}
-
-	/* Notify kernel about processed nr_bytes */
-	WARN_ON(blk_update_request(rq, status, nr_bytes));
+	ret = do_request(rq);
 
 	/* Stop request serving procedure */
-	__blk_mq_end_request(rq, status);
+	blk_mq_end_request(rq, ret < 0 ? BLK_STS_IOERR : BLK_STS_OK);
 
-	return status;
+	return ret;
 }
 
-static struct blk_mq_ops mq_ops = {
+static const struct blk_mq_ops mq_ops = {
 	.queue_rq = queue_rq,
 };
 
@@ -147,7 +147,7 @@ static struct attribute *cheeze_disk_attrs[] = {
 	NULL,
 };
 
-static struct attribute_group cheeze_disk_attr_group = {
+static const struct attribute_group cheeze_disk_attr_group = {
 	.attrs = cheeze_disk_attrs,
 };
 
@@ -227,6 +227,12 @@ static int create_device(void)
 	blk_queue_io_min(cheeze_disk->queue, PAGE_SIZE);
 	blk_queue_io_opt(cheeze_disk->queue, PAGE_SIZE);
 	blk_queue_max_hw_sectors(cheeze_disk->queue, BLK_DEF_MAX_SECTORS);
+
+	// Set discard capability
+	cheeze_disk->queue->limits.discard_granularity = PAGE_SIZE;
+	blk_queue_max_discard_sectors(cheeze_disk->queue, UINT_MAX);
+	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, cheeze_disk->queue);
+	blk_queue_max_write_zeroes_sectors(cheeze_disk->queue, UINT_MAX);
 
 	add_disk(cheeze_disk);
 

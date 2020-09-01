@@ -20,9 +20,32 @@ static struct semaphore mutex, slots, items;
 struct cheeze_req *reqs = NULL;
 
 // Lock must be held and freed before and after push()
-int cheeze_push(struct request *rq, unsigned int *nr_bytes) {
+int cheeze_push(struct request *rq) {
 	struct cheeze_req *req;
-	int id;
+	int id, op;
+	bool is_rw = true;
+
+	op = req_op(rq);
+	if (unlikely(op > 1)) {
+		is_rw = false;
+		switch (op = req_op(rq)) {
+		case REQ_OP_FLUSH:
+			pr_warn("ignoring REQ_OP_FLUSH\n");
+			return SKIP;
+		case REQ_OP_WRITE_ZEROES:
+			// pr_warn("ignoring REQ_OP_WRITE_ZEROES\n");
+			// return SKIP;
+			pr_info("REQ_OP_WRITE_ZEROES -> REQ_OP_DISCARD\n");
+			op = REQ_OP_DISCARD;
+			/* fallthrough */
+		case REQ_OP_DISCARD:
+			pr_warn("REQ_OP_DISCARD\n");
+			break;
+		default:
+			pr_warn("unsupported operation: %d\n", op);
+			return -EOPNOTSUPP;
+		}
+	}
 
 	down(&slots); /* Wait for available slot */
 	down(&mutex); /* Lock the buffer */
@@ -33,8 +56,9 @@ int cheeze_push(struct request *rq, unsigned int *nr_bytes) {
 	req = reqs + id;		/* Insert the item */
 
 	req->rq = rq;
-	req->nr_bytes = nr_bytes;
-	req->user.rw = rq_data_dir(rq);
+	req->is_rw = is_rw;
+
+	req->user.op = op;
 	req->user.pos = (blk_rq_pos(rq) << SECTOR_SHIFT) >> CHEEZE_LOGICAL_BLOCK_SHIFT;
 	req->user.len = blk_rq_bytes(rq);
 	req->user.id = id;

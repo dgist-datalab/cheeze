@@ -28,44 +28,14 @@ static DECLARE_WAIT_QUEUE_HEAD(cheeze_chr_wait);
 
 static int do_request(struct cheeze_req *req)
 {
-	int rw = 0;
 	unsigned long b_len = 0;
 	struct bio_vec bvec;
 	struct req_iterator iter;
 	loff_t off = 0;
 	void *b_buf;
 	struct request *rq;
-	unsigned int *nr_bytes;
 
 	rq = req->rq;
-	nr_bytes = req->nr_bytes;
-
-	switch (req_op(rq)) {
-	case REQ_OP_FLUSH:
-		pr_warn("ignoring REQ_OP_FLUSH\n");
-		WARN_ON(1);
-		return -EIO;
-		break;
-	case REQ_OP_WRITE_ZEROES:
-		pr_warn("ignoring REQ_OP_WRITE_ZEROES\n");
-		WARN_ON(1);
-		return -EIO;
-		break;
-	case REQ_OP_DISCARD:
-		pr_warn("ignoring REQ_OP_DISCARD\n");
-		WARN_ON(1);
-		return -EIO;
-		break;
-	case REQ_OP_WRITE:
-		rw = 1;
-		/* fallthrough */
-	case REQ_OP_READ:
-		break;
-	default:
-		WARN_ON(1);
-		return -EIO;
-		break;
-	}
 
 	pr_debug("%s++\n", __func__);
 
@@ -78,25 +48,27 @@ static int do_request(struct cheeze_req *req)
 
 		pr_debug("off: %lld, len: %ld, dest_buf: %px, user_buf: %px\n", off, b_len, b_buf, req->user.buf);
 
-		if (rw) {
+		switch (req->user.op) {
+		case REQ_OP_WRITE:
 			// Write
 			if (unlikely(copy_to_user(req->user.buf + off, b_buf, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
 				WARN_ON(1);
 				pr_err("%s: copy_to_user() failed\n", __func__);
 				return -EFAULT;
 			}
-		} else {
+			break;
+		case REQ_OP_READ:
 			// Read
 			if (unlikely(copy_from_user(b_buf, req->user.buf + off, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
 				WARN_ON(1);
 				pr_err("%s: copy_from_user() failed\n", __func__);
 				return -EFAULT;
 			}
+			break;
 		}
 
 		/* Increment counters */
 		off += b_len;
-		*nr_bytes += b_len;
 	}
 
 	pr_debug("%s--\n", __func__);
@@ -167,7 +139,10 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 	req->user.buf = ureq.buf;
 
 	// Process bio
-	req->ret = do_request(req);
+	if (likely(req->is_rw))
+		req->ret = do_request(req);
+	else
+		req->ret = 0;
 
 	complete(&req->acked);
 

@@ -17,6 +17,8 @@
 
 #define CHEEZE_QUEUE_SIZE 4096
 
+#define SKIP INT_MIN
+
 // #define DEBUG
 #define DEBUG_SLEEP 1
 
@@ -28,7 +30,7 @@
 
 struct cheeze_req_user {
 	int id;
-	int rw;
+	int op;
 	char *buf;
 	unsigned int pos; // sector_t but divided by 4096
 	unsigned int len;
@@ -36,7 +38,7 @@ struct cheeze_req_user {
 
 struct cheeze_req {
 	int ret;
-	unsigned int *nr_bytes;
+	bool is_rw;
 	struct request *rq;
 	struct cheeze_req_user user;
 	struct completion acked;
@@ -51,7 +53,7 @@ int cheeze_chr_init_module(void);
 
 // queue.c
 extern struct cheeze_req *reqs;
-int cheeze_push(struct request *rq, unsigned int *nr_bytes);
+int cheeze_push(struct request *rq);
 struct cheeze_req *cheeze_peek(void);
 void cheeze_pop(int id);
 void cheeze_queue_init(void);
