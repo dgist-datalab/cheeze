@@ -35,11 +35,11 @@ int cheeze_push(struct request *rq) {
 		case REQ_OP_WRITE_ZEROES:
 			// pr_warn("ignoring REQ_OP_WRITE_ZEROES\n");
 			// return SKIP;
-			pr_info("REQ_OP_WRITE_ZEROES -> REQ_OP_DISCARD\n");
+			pr_debug("REQ_OP_WRITE_ZEROES -> REQ_OP_DISCARD\n");
 			op = REQ_OP_DISCARD;
 			/* fallthrough */
 		case REQ_OP_DISCARD:
-			pr_warn("REQ_OP_DISCARD\n");
+			pr_debug("REQ_OP_DISCARD\n");
 			break;
 		default:
 			pr_warn("unsupported operation: %d\n", op);
