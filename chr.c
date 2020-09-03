@@ -17,6 +17,7 @@
 #include <linux/backing-dev.h>
 #include <linux/blk-mq.h>
 #include <linux/sched/signal.h>
+#include <linux/crc32.h>
 
 #include "cheeze.h"
 
@@ -40,6 +41,8 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 			    loff_t * f_pos)
 {
 	struct cheeze_req *req;
+	struct cheeze_req_user *user;
+	char *mem;
 
 	if (unlikely(count != sizeof(struct cheeze_req_user))) {
 		pr_err("%s: size mismatch: %ld vs %ld\n",
@@ -48,14 +51,27 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 		return -EINVAL;
 	}
 
+	if (unlikely(copy_to_user(buf + offsetof(struct cheeze_req_user, buf), mem, sizeof(mem)))) {
+		pr_err("%s: copy_to_user() for mem failed\n", __func__);
+		return -EFAULT;
+	}
+
 	req = cheeze_peek();
 	if (unlikely(req == NULL)) {
 		pr_err("%s: failed to peek queue\n", __func__);
 		return -ERESTARTSYS;
 	}
 
+	user = req->user;
 	if (unlikely(copy_to_user(buf, &req->user, count))) {
-		pr_err("%s: copy_to_user() failed\n", __func__);
+		pr_err("%s: copy_to_user() - 1 failed\n", __func__);
+		return -EFAULT;
+	}
+
+	pr_info("req[%d]'s CRC32: 0x%x\n", req->user->id, crc32(0, req->user->buf, req->user->buf_len));
+
+	if (unlikely(copy_to_user(req->user->buf, mem, req->user->buf_len))) {
+		pr_err("%s: copy_to_user() - 2 failed\n", __func__);
 		return -EFAULT;
 	}
 
@@ -86,7 +102,7 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 
 	req = reqs + ureq.id;
 
-	if (ureq.ret_buf) {
+	if (ureq.ret_buf && ureq.ubuf_len != 0) {
 		if (unlikely(copy_from_user(ureq.ret_buf, ureq.ubuf, ureq.ubuf_len))) {
 			pr_err("%s: failed to fill ret_buf for koo\n", __func__);
 			return -EFAULT;

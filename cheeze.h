@@ -28,6 +28,8 @@ struct cheeze_req_user {
 	char *ret_buf; // Set by koo (Could be NULL)
 } __attribute__((aligned(8), packed));
 
+#ifdef __KERNEL__
+
 struct cheeze_req {
 	struct completion acked; // Set by cheeze
 	struct cheeze_req_user *user; // Set by koo, needs to be freed by koo
@@ -46,5 +48,7 @@ int cheeze_push(struct cheeze_req_user *user);
 struct cheeze_req *cheeze_peek(void);
 void cheeze_pop(int id);
 void cheeze_queue_init(void);
+
+#endif
 
 #endif
