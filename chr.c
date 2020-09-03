@@ -26,56 +26,6 @@
 static struct cdev cheeze_chr_cdev;
 static DECLARE_WAIT_QUEUE_HEAD(cheeze_chr_wait);
 
-static int do_request(struct cheeze_req *req)
-{
-	unsigned long b_len = 0;
-	struct bio_vec bvec;
-	struct req_iterator iter;
-	loff_t off = 0;
-	void *b_buf;
-	struct request *rq;
-
-	rq = req->rq;
-
-	pr_debug("%s++\n", __func__);
-
-	/* Iterate over all requests segments */
-	rq_for_each_segment(bvec, rq, iter) {
-		b_len = bvec.bv_len;
-
-		/* Get pointer to the data */
-		b_buf = page_address(bvec.bv_page) + bvec.bv_offset;
-
-		pr_debug("off: %lld, len: %ld, dest_buf: %px, user_buf: %px\n", off, b_len, b_buf, req->user.buf);
-
-		switch (req->user.op) {
-		case REQ_OP_WRITE:
-			// Write
-			if (unlikely(copy_to_user(req->user.buf + off, b_buf, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
-				WARN_ON(1);
-				pr_err("%s: copy_to_user() failed\n", __func__);
-				return -EFAULT;
-			}
-			break;
-		case REQ_OP_READ:
-			// Read
-			if (unlikely(copy_from_user(b_buf, req->user.buf + off, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
-				WARN_ON(1);
-				pr_err("%s: copy_from_user() failed\n", __func__);
-				return -EFAULT;
-			}
-			break;
-		}
-
-		/* Increment counters */
-		off += b_len;
-	}
-
-	pr_debug("%s--\n", __func__);
-
-	return 0;
-}
-
 static int cheeze_chr_open(struct inode *inode, struct file *filp)
 {
 	return 0;
@@ -129,20 +79,19 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 		return -EFAULT;
 	}
 
-	pr_debug("write: req[%d]\n"
+	pr_debug("chr write: req[%d]\n"
 		"  buf=%px\n"
-		"  pos=%u\n"
-		"  len=%u\n",
-			ureq.id, ureq.buf, ureq.pos, ureq.len);
+		"  len=%d\n",
+			ureq.id, ureq.ubuf, ureq.ubuf_len);
 
 	req = reqs + ureq.id;
-	req->user.buf = ureq.buf;
 
-	// Process bio
-	if (likely(req->is_rw))
-		req->ret = do_request(req);
-	else
-		req->ret = 0;
+	if (ureq.ret_buf) {
+		if (unlikely(copy_from_user(ureq.ret_buf, ureq.ubuf, ureq.ubuf_len))) {
+			pr_err("%s: failed to fill ret_buf for koo\n", __func__);
+			return -EFAULT;
+		}
+	}
 
 	complete(&req->acked);
 
