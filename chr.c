@@ -75,6 +75,11 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 		return -EFAULT;
 	}
 
+	if (ureq.ret_buf == NULL) {
+		// No acknowledgement required
+		complete(&req->acked);
+	}
+
 	return count;
 }
 
@@ -102,7 +107,7 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 
 	req = reqs + ureq.id;
 
-	if (ureq.ret_buf && ureq.ubuf_len != 0) {
+	if (ureq.ubuf_len != 0) {
 		if (unlikely(copy_from_user(ureq.ret_buf, ureq.ubuf, ureq.ubuf_len))) {
 			pr_err("%s: failed to fill ret_buf for koo\n", __func__);
 			return -EFAULT;
