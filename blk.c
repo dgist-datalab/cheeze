@@ -41,7 +41,7 @@ void cheeze_io(struct cheeze_req_user *user)
 }
 EXPORT_SYMBOL(cheeze_io);
 
-static int __init cheeze_init(void)
+int cheeze_init(void)
 {
 	int ret, i;
 
@@ -76,16 +76,10 @@ out:
 	return ret;
 }
 
-static void __exit cheeze_exit(void)
+void cheeze_exit(void)
 {
 	kfree(reqs);
 
 	cheeze_chr_cleanup_module();
 	class_destroy(cheeze_chr_class);
 }
-
-module_init(cheeze_init);
-module_exit(cheeze_exit);
-
-MODULE_LICENSE("GPL v2");
-MODULE_AUTHOR("Park Ju Hyung <qkrwngud825@gmail.com>");

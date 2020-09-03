@@ -42,7 +42,8 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 {
 	struct cheeze_req *req;
 	struct cheeze_req_user *user;
-	char *mem;
+	char __user *mem;
+	int i;
 
 	if (unlikely(count != sizeof(struct cheeze_req_user))) {
 		pr_err("%s: size mismatch: %ld vs %ld\n",
@@ -51,8 +52,8 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 		return -EINVAL;
 	}
 
-	if (unlikely(copy_to_user(buf + offsetof(struct cheeze_req_user, buf), mem, sizeof(mem)))) {
-		pr_err("%s: copy_to_user() for mem failed\n", __func__);
+	if (unlikely(copy_from_user(&mem, buf + offsetof(struct cheeze_req_user, buf), sizeof(mem)))) {
+		pr_err("%s: copy_from_user() for mem failed\n", __func__);
 		return -EFAULT;
 	}
 
@@ -63,19 +64,24 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 	}
 
 	user = req->user;
-	if (unlikely(copy_to_user(buf, &req->user, count))) {
-		pr_err("%s: copy_to_user() - 1 failed\n", __func__);
-		return -EFAULT;
-	}
 
-	pr_info("req[%d]'s CRC32: 0x%x\n", req->user->id, crc32(0, req->user->buf, req->user->buf_len));
+	//for (i = 0; i < user->buf_len; i++)
+	//	pr_info("%d ", user->buf[i]);
+	//pr_info("\n");
+	//pr_info("req[%d]'s (buf_len:%d) CRC32: 0x%x\n", user->id, user->buf_len, crc32(0, user->buf, user->buf_len));
 
-	if (unlikely(copy_to_user(req->user->buf, mem, req->user->buf_len))) {
+	if (unlikely(copy_to_user(mem, user->buf, user->buf_len))) {
 		pr_err("%s: copy_to_user() - 2 failed\n", __func__);
 		return -EFAULT;
 	}
 
-	if (ureq.ret_buf == NULL) {
+	user->buf = mem;
+	if (unlikely(copy_to_user(buf, user, count))) {
+		pr_err("%s: copy_to_user() - 1 failed\n", __func__);
+		return -EFAULT;
+	}
+
+	if (user->ret_buf == NULL) {
 		// No acknowledgement required
 		complete(&req->acked);
 	}
@@ -100,14 +106,16 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 		return -EFAULT;
 	}
 
-	pr_debug("chr write: req[%d]\n"
+	pr_info("chr write: req[%d]\n"
 		"  buf=%px\n"
-		"  len=%d\n",
-			ureq.id, ureq.ubuf, ureq.ubuf_len);
+		"  len=%d\n"
+		"  ubuf=%px\n"
+		"  ubuf_len=%d\n",
+			ureq.id, ureq.buf, ureq.buf_len, ureq.ubuf, ureq.ubuf_len);
 
 	req = reqs + ureq.id;
 
-	if (ureq.ubuf_len != 0) {
+	if (ureq.ret_buf && ureq.ubuf_len != 0) {
 		if (unlikely(copy_from_user(ureq.ret_buf, ureq.ubuf, ureq.ubuf_len))) {
 			pr_err("%s: failed to fill ret_buf for koo\n", __func__);
 			return -EFAULT;

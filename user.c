@@ -47,10 +47,15 @@ int main() {
 			break;
 
 		printf("req[%d]'s length = %d\n", req.id, req.buf_len);
-		printf("req[%d]'s CRC32: 0x%lx\n", req.id, crc32(0, (unsigned char *)mem, req.buf_len));
+		//for (int i = 0; i < req.buf_len; i++)
+		//	printf("%d ", mem[i]);
+		//printf("\n");
+		// printf("req[%d]'s CRC32: 0x%lx\n", req.id, crc32(0, (unsigned char *)mem, req.buf_len));
 
-		req.ubuf_len = strlen(TEST_STRING) + 1;
-		req.ubuf = TEST_STRING;
+		if (req.ret_buf) {
+			req.ubuf_len = strlen(TEST_STRING) + 1;
+			req.ubuf = TEST_STRING;
+		}
 
 		write(chrfd, &req, sizeof(struct cheeze_req_user));
 	}

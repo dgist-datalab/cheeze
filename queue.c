@@ -28,7 +28,9 @@ int cheeze_push(struct cheeze_req_user *user) {
 	down(&mutex); /* Lock the buffer */
 
 	id = (rear + 1) % CHEEZE_QUEUE_SIZE; // XXX: Overflow?
-	// pr_info("pushing %d(%d)\n", id, reqs[id].id);
+
+	pr_info("pushing %d(buf_len: %d)\n", id, user->buf_len);
+
 	rear = id;
 	req = reqs + id;		/* Insert the item */
 
