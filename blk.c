@@ -78,6 +78,7 @@ out:
 
 void cheeze_exit(void)
 {
+	cheeze_queue_exit();
 	kfree(reqs);
 
 	cheeze_chr_cleanup_module();

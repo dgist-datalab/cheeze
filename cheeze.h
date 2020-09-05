@@ -30,9 +30,17 @@ struct cheeze_req_user {
 
 #ifdef __KERNEL__
 
+#include <linux/list.h>
+
+struct cheeze_queue_item {
+	int id;
+	struct list_head tag_list;
+};
+
 struct cheeze_req {
 	struct completion acked; // Set by cheeze
 	struct cheeze_req_user *user; // Set by koo, needs to be freed by koo
+	struct cheeze_queue_item *item;
 };
 
 // blk.c
@@ -48,6 +56,7 @@ int cheeze_push(struct cheeze_req_user *user);
 struct cheeze_req *cheeze_peek(void);
 void cheeze_pop(int id);
 void cheeze_queue_init(void);
+void cheeze_queue_exit(void);
 
 #endif
 

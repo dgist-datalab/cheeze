@@ -117,11 +117,10 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 	req = reqs + ureq.id;
 
 	if (ureq.ret_buf && ureq.ubuf_len != 0) {
-		//if (unlikely(copy_from_user(ureq.ret_buf, ureq.ubuf, ureq.ubuf_len))) {
-		//	pr_err("%s: failed to fill ret_buf for koo\n", __func__);
-		//	return -EFAULT;
-		//}
-		//pr_info("ret != NULL %px, %d\n", ureq.ret_buf, ureq.ubuf_len);
+		if (unlikely(copy_from_user(ureq.ret_buf, ureq.ubuf, ureq.ubuf_len))) {
+			pr_err("%s: failed to fill ret_buf for koo\n", __func__);
+			return -EFAULT;
+		}
 		complete(&req->acked);
 	}
 
