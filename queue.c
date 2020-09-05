@@ -24,12 +24,12 @@ int cheeze_push(struct cheeze_req_user *user) {
 	struct cheeze_req *req;
 	int id;
 
-	down(&slots); /* Wait for available slot */
-	down(&mutex); /* Lock the buffer */
+	down(&slots);
+	down(&mutex);
 
 	id = (rear + 1) % CHEEZE_QUEUE_SIZE; // XXX: Overflow?
 
-	pr_info("pushing %d(buf_len: %d)\n", id, user->buf_len);
+	//pr_info("pushing %d(buf_len: %d)\n", id, user->buf_len);
 
 	rear = id;
 	req = reqs + id;		/* Insert the item */

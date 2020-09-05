@@ -46,7 +46,7 @@ int main() {
 		if (r < 0)
 			break;
 
-		printf("req[%d]'s length = %d\n", req.id, req.buf_len);
+		//printf("req[%d]'s length = %d\n", req.id, req.buf_len);
 		//for (int i = 0; i < req.buf_len; i++)
 		//	printf("%d ", mem[i]);
 		//printf("\n");

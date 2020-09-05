@@ -83,6 +83,7 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 
 	if (user->ret_buf == NULL) {
 		// No acknowledgement required
+		//pr_info("ret == NULL\n");
 		complete(&req->acked);
 	}
 
@@ -106,23 +107,23 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 		return -EFAULT;
 	}
 
-	pr_info("chr write: req[%d]\n"
-		"  buf=%px\n"
-		"  len=%d\n"
-		"  ubuf=%px\n"
-		"  ubuf_len=%d\n",
-			ureq.id, ureq.buf, ureq.buf_len, ureq.ubuf, ureq.ubuf_len);
+	//pr_info("chr write: req[%d]\n"
+	//	"  buf=%px\n"
+	//	"  len=%d\n"
+	//	"  ubuf=%px\n"
+	//	"  ubuf_len=%d\n",
+	//		ureq.id, ureq.buf, ureq.buf_len, ureq.ubuf, ureq.ubuf_len);
 
 	req = reqs + ureq.id;
 
 	if (ureq.ret_buf && ureq.ubuf_len != 0) {
-		if (unlikely(copy_from_user(ureq.ret_buf, ureq.ubuf, ureq.ubuf_len))) {
-			pr_err("%s: failed to fill ret_buf for koo\n", __func__);
-			return -EFAULT;
-		}
+		//if (unlikely(copy_from_user(ureq.ret_buf, ureq.ubuf, ureq.ubuf_len))) {
+		//	pr_err("%s: failed to fill ret_buf for koo\n", __func__);
+		//	return -EFAULT;
+		//}
+		//pr_info("ret != NULL %px, %d\n", ureq.ret_buf, ureq.ubuf_len);
+		complete(&req->acked);
 	}
-
-	complete(&req->acked);
 
 	return (ssize_t)count;
 }
