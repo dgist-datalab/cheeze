@@ -36,17 +36,27 @@ struct cheeze_req_user {
 	unsigned int len;
 } __attribute__((aligned(8), packed));
 
+#ifdef __KERNEL__
+
+#include <linux/list.h>
+
+struct cheeze_queue_item {
+	int id;
+	struct list_head tag_list;
+};
+
 struct cheeze_req {
 	int ret;
 	bool is_rw;
 	struct request *rq;
 	struct cheeze_req_user user;
 	struct completion acked;
+	struct cheeze_queue_item *item;
 } __attribute__((aligned(8), packed));
 
 // blk.c
+void cheeze_io(struct cheeze_req_user *user); // Called by koo
 extern struct class *cheeze_chr_class;
-extern bool cheeze_opened;
 // extern struct mutex cheeze_mutex;
 void cheeze_chr_cleanup_module(void);
 int cheeze_chr_init_module(void);
@@ -57,5 +67,8 @@ int cheeze_push(struct request *rq);
 struct cheeze_req *cheeze_peek(void);
 void cheeze_pop(int id);
 void cheeze_queue_init(void);
+void cheeze_queue_exit(void);
+
+#endif
 
 #endif
