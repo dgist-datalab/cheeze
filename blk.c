@@ -26,12 +26,16 @@
 struct class *cheeze_chr_class;
 
 /* Serve requests from koo */
-void cheeze_io(struct cheeze_req_user *user)
+void cheeze_io(struct cheeze_req_user *user, void *(*cb)(void *data), void *extra)
 {
 	int id;
 	struct cheeze_req *req;
 
 	id = cheeze_push(user);
+
+	if (cb) {
+		cb(extra);
+	}
 
 	req = reqs + id;
 
@@ -56,7 +60,7 @@ int cheeze_init(void)
 	if (ret)
 		goto destroy_chr;
 
-	reqs = kzalloc(sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE, GFP_KERNEL);
+	reqs = kzalloc(sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE, GFP_NOIO);
 	if (reqs == NULL) {
 		pr_err("%s %d: Unable to allocate memory for cheeze_req\n", __func__, __LINE__);
 		ret = -ENOMEM;

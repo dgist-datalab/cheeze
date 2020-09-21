@@ -107,24 +107,24 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 		return -EFAULT;
 	}
 
-	pr_info("chr write: req[%d]\n"
-		"  buf=%px\n"
-		"  len=%d\n"
-		"  ubuf=%px\n"
-		"  ubuf_len=%d\n",
-			ureq.id, ureq.buf, ureq.buf_len, ureq.ubuf, ureq.ubuf_len);
+	//pr_info("chr write: req[%d]\n"
+	//	"  buf=%px\n"
+	//	"  len=%d\n"
+	//	"  ubuf=%px\n"
+	//	"  ubuf_len=%d\n",
+	//		ureq.id, ureq.buf, ureq.buf_len, ureq.ubuf, ureq.ubuf_len);
 
 	req = reqs + ureq.id;
 	req->user->ubuf_len = ureq.ubuf_len;
 
 	if (ureq.ret_buf && ureq.ubuf_len != 0) {
-		pr_info("copy!!!\n", ureq.ubuf_len);
+		//pr_info("copy!!!\n", ureq.ubuf_len);
 		if (unlikely(copy_from_user(ureq.ret_buf, ureq.ubuf, ureq.ubuf_len))) {
 			pr_err("%s: failed to fill ret_buf for koo\n", __func__);
 			return -EFAULT;
 		}
+		complete(&req->acked);
 	}
-	complete(&req->acked);
 
 	return (ssize_t)count;
 }

@@ -44,7 +44,7 @@ struct cheeze_req {
 };
 
 // blk.c
-void cheeze_io(struct cheeze_req_user *user); // Called by koo
+void cheeze_io(struct cheeze_req_user *user, void *(*cb)(void *data), void *extra); // Called by koo
 extern struct class *cheeze_chr_class;
 // extern struct mutex cheeze_mutex;
 void cheeze_chr_cleanup_module(void);

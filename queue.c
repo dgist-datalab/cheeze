@@ -121,7 +121,7 @@ void cheeze_queue_init(void) {
 	spin_lock_init(&queue_spin);
 
 	for (i = 0; i < CHEEZE_QUEUE_SIZE; i++) {
-		item = kzalloc(sizeof(struct cheeze_queue_item), GFP_KERNEL);
+		item = kzalloc(sizeof(struct cheeze_queue_item), GFP_NOIO);
 		item->id = i;
 		INIT_LIST_HEAD(&item->tag_list);
 		list_add_tail(&item->tag_list, &free_tag_list);
