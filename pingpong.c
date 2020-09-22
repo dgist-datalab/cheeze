@@ -30,8 +30,8 @@ static int pingpong_kthread(void *unused)
 	memset(pp, 0, sizeof(struct pingpong_fmt));
 
 	while (!kthread_should_stop()) {
-		while (!pp->ready) msleep(1);
-		pr_info("CRC: 0x%x\n", crc32(~0L, pp->buf, BUF_SIZE));
+		while (!pp->ready && !kthread_should_stop()) msleep(1);
+		pr_info("CRC: 0x%x\n", crc32(0 ^ 0xffffffff, pp->buf, BUF_SIZE) ^ 0xffffffff);
 		pp->ready = 0;
 	}
 
@@ -52,7 +52,7 @@ static int set_page_addr(const char *val, const struct kernel_param *kp)
 		return ret;
 
 	pr_info("Setting 0x%lx as page address\n", dst);
-	memcpy(&page_addr, &dst, sizeof(void*));
+	page_addr = phys_to_virt(dst);
 	pr_info("page_addr: 0x%px\n", page_addr);
 
 	return ret;

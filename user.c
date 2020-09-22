@@ -10,7 +10,7 @@
 
 #include <zlib.h>
 
-#define PHYS_ADDR 0x180000000
+#define PHYS_ADDR 0x3280000000
 #define TOTAL_SIZE (1024L * 1024L * 1024L) // 1 GB
 
 #define BUF_SIZE (1024 * 1024) // 1 MB
@@ -54,7 +54,7 @@ static void loop()
 	for (;;) {
 		while (pp->ready) usleep(1 * 1000);
 		read(random_fd, pp->buf, BUF_SIZE);
-		printf("CRC: 0x%lx\n", crc32(~0L, pp->buf, BUF_SIZE));
+		printf("CRC: 0x%lx\n", crc32(0, pp->buf, BUF_SIZE));
 		pp->ready = 1;
 	}
 }
