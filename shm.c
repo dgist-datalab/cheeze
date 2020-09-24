@@ -19,7 +19,7 @@ static void *page_addr[3];
 static uint64_t *send_event_addr; // CHEEZE_QUEUE_SIZE ==> 16B
 static uint64_t *recv_event_addr; // 16B
 static uint64_t *seq_addr; // 8KB
-static char *data_addr[2]; // page_addr[1]: 1GB, page_addr[2]: 1GB
+void *cheeze_data_addr[2]; // page_addr[1]: 1GB, page_addr[2]: 1GB
 
 static struct task_struct *shm_task = NULL;
 
@@ -32,7 +32,7 @@ static int __do_request(struct cheeze_req *req)
 	struct bio_vec bvec;
 	struct req_iterator iter;
 	loff_t off = 0;
-	void *b_buf;
+	void *bbuf, *ubuf;
 	struct request *rq;
 
 	rq = req->rq;
@@ -44,14 +44,15 @@ static int __do_request(struct cheeze_req *req)
 		b_len = bvec.bv_len;
 
 		/* Get pointer to the data */
-		b_buf = page_address(bvec.bv_page) + bvec.bv_offset;
+		bbuf = page_address(bvec.bv_page) + bvec.bv_offset;
+		ubuf = get_buf_addr(req->user.id);
 
-		pr_debug("off: %lld, len: %ld, dest_buf: %px, user_buf: %px\n", off, b_len, b_buf, req->user.buf);
+		pr_debug("off: %lld, len: %ld, dest_buf: %px, user_buf: %px\n", off, b_len, bbuf, ubuf);
 
 		switch (req->user.op) {
 		case REQ_OP_WRITE:
 			// Write
-			if (unlikely(copy_to_user(req->user.buf + off, b_buf, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
+			if (unlikely(copy_to_user(ubuf + off, bbuf, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
 				WARN_ON(1);
 				pr_err("%s: copy_to_user() failed\n", __func__);
 				return -EFAULT;
@@ -59,7 +60,7 @@ static int __do_request(struct cheeze_req *req)
 			break;
 		case REQ_OP_READ:
 			// Read
-			if (unlikely(copy_from_user(b_buf, req->user.buf + off, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
+			if (unlikely(copy_from_user(bbuf, ubuf + off, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
 				WARN_ON(1);
 				pr_err("%s: copy_from_user() failed\n", __func__);
 				return -EFAULT;
@@ -88,10 +89,10 @@ static void do_request(struct cheeze_req *req)
 
 int send_req (struct cheeze_req *req, int id, uint64_t seq) {
 	uint64_t *send = &send_event_addr[ (id / BITS_PER_EVENT) ];
-	char *buf = get_buf_addr(data_addr, id);
+	// char *buf = get_buf_addr(id);
 	// struct cheeze_req_user *ureq = ureq_addr + id;
 	// caller should be call memcpy to reqs before calling this function
-	memcpy(buf, req->user.buf, req->user.len);
+	// memcpy(buf, req->user.buf, req->user.len);
 	// ??? memcpy(ureq, req->user, sizeof(*ureq));
 	seq_addr[id] = seq;
 	/* memory barrier XXX:Arm */
@@ -206,8 +207,8 @@ static void shm_meta_init(void *ppage_addr) {
 }
 
 static void shm_data_init(void **ppage_addr) {
-	data_addr[0] = ppage_addr[1];
-	data_addr[1] = ppage_addr[2];
+	cheeze_data_addr[0] = ppage_addr[1];
+	cheeze_data_addr[1] = ppage_addr[2];
 }
 
 void __exit shm_exit(void)

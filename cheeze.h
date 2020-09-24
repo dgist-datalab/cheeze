@@ -49,7 +49,6 @@
 struct cheeze_req_user {
 	int id;
 	int op;
-	char *buf;
 	unsigned int pos; // sector_t but divided by 4096
 	unsigned int len;
 } __attribute__((aligned(8), packed));
@@ -89,11 +88,12 @@ void cheeze_queue_init(void);
 void cheeze_queue_exit(void);
 
 //shm.c
+extern void *cheeze_data_addr[2];
 void __exit shm_exit(void);
 int send_req (struct cheeze_req *req, int id, uint64_t seq);
-static inline char *get_buf_addr(char **pdata_addr, int id) {
+static inline void *get_buf_addr(int id) {
 	int idx = id / ITEMS_PER_HP;
-	return pdata_addr[idx] + (id * CHEEZE_BUF_SIZE);
+	return cheeze_data_addr[idx] + (id * CHEEZE_BUF_SIZE);
 }
 
 #endif

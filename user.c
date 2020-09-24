@@ -15,6 +15,35 @@
 #include <unistd.h>
 #include <time.h>
 
+#define PHYS_ADDR 0x3280000000 
+#define CHEEZE_QUEUE_SIZE 1024
+#define CHEEZE_BUF_SIZE (2ULL * 1024 * 1024)
+#define ITEMS_PER_HP ((1ULL * 1024 * 1024 * 1024) / CHEEZE_BUF_SIZE)
+#define BITS_PER_EVENT (sizeof(uint64_t) * 8)
+
+#define EVENT_BYTES (CHEEZE_QUEUE_SIZE / BITS_PER_EVENT)
+
+#define SEND_OFF 0
+#define SEND_SIZE EVENT_BYTES
+
+#define RECV_OFF (SEND_OFF + SEND_SIZE)
+#define RECV_SIZE EVENT_BYTES
+
+#define SEQ_OFF (RECV_OFF + RECV_SIZE)
+#define SEQ_SIZE (sizeof(uint64_t) * CHEEZE_QUEUE_SIZE)
+
+#define REQS_OFF (SEQ_OFF + SEQ_SIZE)
+#define REQS_SIZE (sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE)
+
+static void *page_addr;
+//static void *meta_addr; // page_addr[0] ==> send_event_addr, recv_event_addr, seq_addr, ureq_addr
+static uint64_t *send_event_addr; // CHEEZE_QUEUE_SIZE ==> 16B
+static uint64_t *recv_event_addr; // 16B
+static uint64_t *seq_addr; // 8KB
+struct cheeze_req_user *ureq_addr; // sizeof(req) * 1024
+static char *data_addr[2]; // page_addr[1]: 1GB, page_addr[2]: 1GB
+static uint64_t seq = 0; 
+
 enum req_opf {
 	/* read sectors from the device */
 	REQ_OP_READ		= 0,
@@ -48,13 +77,31 @@ enum req_opf {
 struct cheeze_req_user {
 	int id;
 	int op;
-	char *buf;
 	unsigned int pos; // sector_t
 	unsigned int len;
 } __attribute__((aligned(8), packed));
 
 #define COPY_TARGET "/tmp/vdb"
 
+static inline char *get_buf_addr(char **pdata_addr, int id) {
+	int idx = id / ITEMS_PER_HP;
+	return pdata_addr[idx] + (id * CHEEZE_BUF_SIZE);
+}
+
+static void shm_meta_init(void *ppage_addr) {
+	memset(ppage_addr, 0, (1ULL * 1024 * 1024 * 1024));
+	send_event_addr = ppage_addr + SEND_OFF; // CHEEZE_QUEUE_SIZE ==> 16B
+	recv_event_addr = ppage_addr + RECV_OFF; // 16B
+	seq_addr = ppage_addr + SEQ_OFF; // 8KB
+	ureq_addr = ppage_addr + REQS_OFF; // sizeof(req) * 1024
+}
+
+static void shm_data_init(void *ppage_addr) {
+	data_addr[0] = ((char *)ppage_addr) + (1ULL * 1024 * 1024 * 1024);
+	data_addr[1] = ((char *)ppage_addr) + (2ULL * 1024 * 1024 * 1024);
+}
+
+#if 0
 // Warning, output is static so this function is not reentrant
 static const char *humanSize(uint64_t bytes)
 {
@@ -76,6 +123,7 @@ static const char *humanSize(uint64_t bytes)
 
 	return output;
 }
+#endif
 
 static off_t fdlength(int fd)
 {
@@ -96,9 +144,7 @@ static inline uint64_t ts_to_ns(struct timespec* ts) {
 	return ts->tv_sec * (uint64_t)1000000000L + ts->tv_nsec;
 }
 
-#define TOTAL_SIZE (1024L * 1024L * 1024L) // 1 GB
-
-static void *mem;
+#define TOTAL_SIZE (3ULL * 1024L * 1024L * 1024L) // 1 GB
 
 static void mem_init()
 {
@@ -114,8 +160,8 @@ static void mem_init()
 	pagesize = getpagesize();
 	addr = PHYS_ADDR & (~(pagesize - 1));
 	len = (PHYS_ADDR & (pagesize - 1)) + TOTAL_SIZE;
-	mem = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, addr);
-	if (mem == MAP_FAILED) {
+	page_addr = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, addr);
+	if (page_addr == MAP_FAILED) {
 		perror("Failed to mmap plain device path");
 		exit(1);
 	}
@@ -124,12 +170,17 @@ static void mem_init()
 }
 
 int main() {
-	int chrfd, copyfd;
+	int copyfd;
 	char *mem;
-	ssize_t r;
-	struct cheeze_req_user req;
+	uint64_t *send, *recv;
+	int i, id, j;
+	uint64_t mask;
+	struct cheeze_req_user *ureq;
+	char *buf, *page_buf;
 
 	mem_init();
+	shm_meta_init(page_addr);
+	shm_data_init(page_addr);
 
 	copyfd = open(COPY_TARGET, O_RDWR);
 	if (copyfd < 0) {
@@ -146,31 +197,37 @@ int main() {
 	close(copyfd);
 
 	while (1) {
-		r = read(chrfd, &req, sizeof(struct cheeze_req_user));
-		if (r < 0)
-			break;
-
-		req.buf = mem + (req.pos * 4096UL);
-
-/*
-		printf("req[%d]\n"
-			"  pos=%u\n"
-			"  len=%u\n"
-			"mem=%p\n"
-			"  pos=%p\n",
-				req.id, req.pos, req.len, mem, req.buf);
-*/
-
-		if (req.op == REQ_OP_DISCARD) {
-			printf("Trimming offset %s", humanSize(req.pos * 4096UL));
-			printf(" with length %s\n", humanSize(req.len));
-			memset(req.buf, 0, req.len);
+		for (i = 0; i < CHEEZE_QUEUE_SIZE / BITS_PER_EVENT; i++) {
+			send = &send_event_addr[i];
+			recv = &recv_event_addr[i];
+			for (j = 0; j < BITS_PER_EVENT; j++) {
+				mask = 1ULL << j;
+				if (*send & mask) {
+					id = i * BITS_PER_EVENT + j;
+					ureq = ureq_addr + id;
+					if (seq_addr[id] == seq) {
+						buf = mem + (ureq->pos * 4096ULL);
+						page_buf = get_buf_addr(data_addr, id);
+						switch (ureq->op) {
+							case REQ_OP_READ:
+								memcpy(page_buf, buf, ureq->len);
+								break;
+							case REQ_OP_WRITE:
+								memcpy(buf, page_buf, ureq->len);
+								break;
+							case REQ_OP_DISCARD:
+								memset(buf, 0, ureq->len);
+								break;
+						}
+						seq++;
+						*send = *send & ~mask;
+						*recv = *recv | mask;
+					} else {
+						continue;
+					}
+				}
+			}
 		}
-
-		// Sanity check
-		// memset(req.buf, 0, req.size);
-
-		write(chrfd, &req, sizeof(struct cheeze_req_user));
 	}
 
 	return 0;
