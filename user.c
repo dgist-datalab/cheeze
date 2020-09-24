@@ -211,7 +211,7 @@ int main() {
 					id = i * BITS_PER_EVENT + j;
 					// printf("id: %d (i: %d, j: %d), seq_addr[id]: %lu, seq: %lu\n", id, i, j, seq_addr[id], seq);
 					ureq = ureq_addr + id;
-					ureq_print(ureq);
+					// ureq_print(ureq);
 					if (seq_addr[id] == seq) {
 						buf = mem + (ureq->pos * 4096ULL);
 						page_buf = get_buf_addr(data_addr, id);

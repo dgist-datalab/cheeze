@@ -48,7 +48,7 @@
 
 #define ureq_print(u) \
 	do { \
-		pr_info("%s:%d\n    id=%d\n    op=%d\n    pos=%u\n    len=%u\n", __func__, __LINE__, u.id, u.op, u.pos, u.len); \
+		pr_debug("%s:%d\n    id=%d\n    op=%d\n    pos=%u\n    len=%u\n", __func__, __LINE__, u.id, u.op, u.pos, u.len); \
 	} while (0);
 
 struct cheeze_req_user {
