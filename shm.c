@@ -3,8 +3,6 @@
  * Copyright (C) 2020 Park Ju Hyung
  */
 
-#define DEBUG
-
 #include <linux/blkdev.h>
 #include <linux/genhd.h>
 #include <linux/backing-dev.h>
@@ -90,7 +88,7 @@ int send_req (struct cheeze_req *req, int id, uint64_t seq) {
 	memcpy(ureq_addr + id, &req->user, sizeof(struct cheeze_req_user));
 	// ??? memcpy(ureq, req->user, sizeof(*ureq));
 	seq_addr[id] = seq;
-	pr_info("%s: id = %d, seq = %llu\n", __func__, id, seq);
+	pr_debug("%s: id = %d, seq = %llu\n", __func__, id, seq);
 	/* memory barrier XXX:Arm */
 	*send = *send | (1ULL << (id % BITS_PER_EVENT));
 	/* memory barrier XXX:Arm */
@@ -109,7 +107,7 @@ static void recv_req (void) {
 			mask = 1ULL << j;
 			if (*recv & mask) {
 				id = i * BITS_PER_EVENT + j;
-				pr_info("%s: id = %d (i: %d, j: %d)\n", __func__, id, i, j);
+				pr_debug("%s: id = %d (i: %d, j: %d)\n", __func__, id, i, j);
 				req = reqs + id;
 				// XXX: Optimize with zerocopy
 				memcpy(&req->user, ureq_addr + id, sizeof(struct cheeze_req_user));
@@ -117,9 +115,7 @@ static void recv_req (void) {
 				do_request(req);
 
 				/* memory barrier XXX:Arm */
-				pr_info("*recv++: %llu\n", *recv);
 				*recv = *recv & ~mask;
-				pr_info("*recv--: %llu\n", *recv);
 				/* memory barrier XXX:Arm */
 			}
 		}

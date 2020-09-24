@@ -209,8 +209,7 @@ int main() {
 				mask = 1ULL << j;
 				if (*send & mask) {
 					id = i * BITS_PER_EVENT + j;
-					printf("id: %d (i: %d, j: %d), seq_addr[id]: %lu, seq: %lu\n", id, i, j, seq_addr[id], seq);
-					printf("%d\n", id);
+					// printf("id: %d (i: %d, j: %d), seq_addr[id]: %lu, seq: %lu\n", id, i, j, seq_addr[id], seq);
 					ureq = ureq_addr + id;
 					ureq_print(ureq);
 					if (seq_addr[id] == seq) {
