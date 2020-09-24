@@ -67,6 +67,9 @@ static int do_request(struct request *rq)
 		return id;
 	}
 
+	if (req->user.op == WRITE)
+		cheeze_do_request(req);
+
 	send_req(req, id, seq);
 
 	wait_for_completion(&req->acked);

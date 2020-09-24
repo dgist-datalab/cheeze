@@ -24,16 +24,16 @@
 #define EVENT_BYTES (CHEEZE_QUEUE_SIZE / BITS_PER_EVENT)
 
 #define SEND_OFF 0
-#define SEND_SIZE EVENT_BYTES
+#define SEND_SIZE (EVENT_BYTES * sizeof(uint64_t))
 
 #define RECV_OFF (SEND_OFF + SEND_SIZE)
-#define RECV_SIZE EVENT_BYTES
+#define RECV_SIZE (EVENT_BYTES * sizeof(uint64_t))
 
 #define SEQ_OFF (RECV_OFF + RECV_SIZE)
-#define SEQ_SIZE (sizeof(uint64_t) * CHEEZE_QUEUE_SIZE)
+#define SEQ_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint64_t))
 
 #define REQS_OFF (SEQ_OFF + SEQ_SIZE)
-#define REQS_SIZE (sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE)
+#define REQS_SIZE (CHEEZE_QUEUE_SIZE * sizeof(struct cheeze_req))
 
 #define SKIP INT_MIN
 
@@ -45,6 +45,11 @@
 #else
   #define msleep_dbg(...) ((void)0)
 #endif
+
+#define ureq_print(u) \
+	do { \
+		pr_info("%s:%d\n    id=%d\n    op=%d\n    pos=%u\n    len=%u\n", __func__, __LINE__, u.id, u.op, u.pos, u.len); \
+	} while (0);
 
 struct cheeze_req_user {
 	int id;
@@ -89,11 +94,12 @@ void cheeze_queue_exit(void);
 
 //shm.c
 extern void *cheeze_data_addr[2];
+int cheeze_do_request(struct cheeze_req *req);
 void __exit shm_exit(void);
 int send_req (struct cheeze_req *req, int id, uint64_t seq);
 static inline void *get_buf_addr(int id) {
 	int idx = id / ITEMS_PER_HP;
-	return cheeze_data_addr[idx] + (id * CHEEZE_BUF_SIZE);
+	return cheeze_data_addr[idx] + ((id % ITEMS_PER_HP) * CHEEZE_BUF_SIZE);
 }
 
 #endif

@@ -3,6 +3,8 @@
  * Copyright (C) 2020 Park Ju Hyung
  */
 
+#define DEBUG
+
 #include <linux/blkdev.h>
 #include <linux/genhd.h>
 #include <linux/backing-dev.h>
@@ -19,6 +21,7 @@ static void *page_addr[3];
 static uint64_t *send_event_addr; // CHEEZE_QUEUE_SIZE ==> 16B
 static uint64_t *recv_event_addr; // 16B
 static uint64_t *seq_addr; // 8KB
+static struct cheeze_req_user *ureq_addr; // sizeof(req) * 1024
 void *cheeze_data_addr[2]; // page_addr[1]: 1GB, page_addr[2]: 1GB
 
 static struct task_struct *shm_task = NULL;
@@ -26,7 +29,7 @@ static struct task_struct *shm_task = NULL;
 static void shm_meta_init(void *ppage_addr);
 static void shm_data_init(void **ppage_addr);
 
-static int __do_request(struct cheeze_req *req)
+int cheeze_do_request(struct cheeze_req *req)
 {
 	unsigned long b_len = 0;
 	struct bio_vec bvec;
@@ -36,6 +39,7 @@ static int __do_request(struct cheeze_req *req)
 	struct request *rq;
 
 	rq = req->rq;
+	ubuf = get_buf_addr(req->user.id);
 
 	pr_debug("%s++\n", __func__);
 
@@ -45,26 +49,17 @@ static int __do_request(struct cheeze_req *req)
 
 		/* Get pointer to the data */
 		bbuf = page_address(bvec.bv_page) + bvec.bv_offset;
-		ubuf = get_buf_addr(req->user.id);
 
 		pr_debug("off: %lld, len: %ld, dest_buf: %px, user_buf: %px\n", off, b_len, bbuf, ubuf);
 
 		switch (req->user.op) {
 		case REQ_OP_WRITE:
 			// Write
-			if (unlikely(copy_to_user(ubuf + off, bbuf, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
-				WARN_ON(1);
-				pr_err("%s: copy_to_user() failed\n", __func__);
-				return -EFAULT;
-			}
+			memcpy(ubuf + off, bbuf, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT);
 			break;
 		case REQ_OP_READ:
 			// Read
-			if (unlikely(copy_from_user(bbuf, ubuf + off, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT))) {
-				WARN_ON(1);
-				pr_err("%s: copy_from_user() failed\n", __func__);
-				return -EFAULT;
-			}
+			memcpy(bbuf, ubuf + off, 1 << CHEEZE_LOGICAL_BLOCK_SHIFT);
 			break;
 		}
 
@@ -80,8 +75,8 @@ static int __do_request(struct cheeze_req *req)
 static void do_request(struct cheeze_req *req)
 {
 	// Process bio
-	if (likely(req->is_rw))
-		req->ret = __do_request(req);
+	if (likely(req->is_rw) && req->user.op == READ)
+		req->ret = cheeze_do_request(req);
 	else
 		req->ret = 0;
 	complete(&req->acked);
@@ -92,9 +87,10 @@ int send_req (struct cheeze_req *req, int id, uint64_t seq) {
 	// char *buf = get_buf_addr(id);
 	// struct cheeze_req_user *ureq = ureq_addr + id;
 	// caller should be call memcpy to reqs before calling this function
-	// memcpy(buf, req->user.buf, req->user.len);
+	memcpy(ureq_addr + id, &req->user, sizeof(struct cheeze_req_user));
 	// ??? memcpy(ureq, req->user, sizeof(*ureq));
 	seq_addr[id] = seq;
+	pr_info("%s: id = %d, seq = %llu\n", __func__, id, seq);
 	/* memory barrier XXX:Arm */
 	*send = *send | (1ULL << (id % BITS_PER_EVENT));
 	/* memory barrier XXX:Arm */
@@ -113,11 +109,17 @@ static void recv_req (void) {
 			mask = 1ULL << j;
 			if (*recv & mask) {
 				id = i * BITS_PER_EVENT + j;
+				pr_info("%s: id = %d (i: %d, j: %d)\n", __func__, id, i, j);
 				req = reqs + id;
+				// XXX: Optimize with zerocopy
+				memcpy(&req->user, ureq_addr + id, sizeof(struct cheeze_req_user));
+				ureq_print(req->user);
 				do_request(req);
 
 				/* memory barrier XXX:Arm */
+				pr_info("*recv++: %llu\n", *recv);
 				*recv = *recv & ~mask;
+				pr_info("*recv--: %llu\n", *recv);
 				/* memory barrier XXX:Arm */
 			}
 		}
@@ -137,6 +139,7 @@ static int shm_kthread(void *unused)
 static int set_page_addr(const char *val, const struct kernel_param *kp)
 {
 	unsigned long dst;
+	void *mem;
 	int ret;
 
 	if (strncmp(val, "0x", 2))
@@ -148,9 +151,13 @@ static int set_page_addr(const char *val, const struct kernel_param *kp)
 		return ret;
 
 	pr_info("Setting 0x%lx as page address\n", dst);
-	page_addr[0] = phys_to_virt(dst);
-	page_addr[1] = phys_to_virt(dst + HP_SIZE);
-	page_addr[2] = phys_to_virt(dst + HP_SIZE + HP_SIZE);
+
+	mem = phys_to_virt(dst);
+
+	page_addr[0] = ioremap_nocache(dst, HP_SIZE * 3);
+	page_addr[1] = page_addr[0] + HP_SIZE;
+	page_addr[2] = page_addr[1] + HP_SIZE;
+
 	pr_info("page_addr[0]: 0x%px\n", page_addr[0]);
 	pr_info("page_addr[1]: 0x%px\n", page_addr[1]);
 	pr_info("page_addr[2]: 0x%px\n", page_addr[2]);
@@ -204,6 +211,7 @@ static void shm_meta_init(void *ppage_addr) {
 	send_event_addr = ppage_addr + SEND_OFF; // CHEEZE_QUEUE_SIZE ==> 16B
 	recv_event_addr = ppage_addr + RECV_OFF; // 16B
 	seq_addr = ppage_addr + SEQ_OFF; // 8KB
+	ureq_addr = ppage_addr + REQS_OFF; // sizeof(req) * 1024
 }
 
 static void shm_data_init(void **ppage_addr) {

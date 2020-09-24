@@ -15,7 +15,7 @@
 #include <unistd.h>
 #include <time.h>
 
-#define PHYS_ADDR 0x3280000000 
+#define PHYS_ADDR 0x800000000
 #define CHEEZE_QUEUE_SIZE 1024
 #define CHEEZE_BUF_SIZE (2ULL * 1024 * 1024)
 #define ITEMS_PER_HP ((1ULL * 1024 * 1024 * 1024) / CHEEZE_BUF_SIZE)
@@ -24,16 +24,21 @@
 #define EVENT_BYTES (CHEEZE_QUEUE_SIZE / BITS_PER_EVENT)
 
 #define SEND_OFF 0
-#define SEND_SIZE EVENT_BYTES
+#define SEND_SIZE (EVENT_BYTES * sizeof(uint64_t))
 
 #define RECV_OFF (SEND_OFF + SEND_SIZE)
-#define RECV_SIZE EVENT_BYTES
+#define RECV_SIZE (EVENT_BYTES * sizeof(uint64_t))
 
 #define SEQ_OFF (RECV_OFF + RECV_SIZE)
-#define SEQ_SIZE (sizeof(uint64_t) * CHEEZE_QUEUE_SIZE)
+#define SEQ_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint64_t))
 
 #define REQS_OFF (SEQ_OFF + SEQ_SIZE)
-#define REQS_SIZE (sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE)
+#define REQS_SIZE (CHEEZE_QUEUE_SIZE * sizeof(struct cheeze_req))
+
+#define ureq_print(u) \
+	do { \
+		printf("%s:%d\n    id=%d\n    op=%d\n    pos=%u\n    len=%u\n", __func__, __LINE__, u->id, u->op, u->pos, u->len); \
+	} while (0);
 
 static void *page_addr;
 //static void *meta_addr; // page_addr[0] ==> send_event_addr, recv_event_addr, seq_addr, ureq_addr
@@ -81,11 +86,11 @@ struct cheeze_req_user {
 	unsigned int len;
 } __attribute__((aligned(8), packed));
 
-#define COPY_TARGET "/tmp/vdb"
+#define COPY_TARGET "/tmp/dev"
 
 static inline char *get_buf_addr(char **pdata_addr, int id) {
 	int idx = id / ITEMS_PER_HP;
-	return pdata_addr[idx] + (id * CHEEZE_BUF_SIZE);
+	return pdata_addr[idx] + ((id % ITEMS_PER_HP) * CHEEZE_BUF_SIZE);
 }
 
 static void shm_meta_init(void *ppage_addr) {
@@ -144,7 +149,7 @@ static inline uint64_t ts_to_ns(struct timespec* ts) {
 	return ts->tv_sec * (uint64_t)1000000000L + ts->tv_nsec;
 }
 
-#define TOTAL_SIZE (3ULL * 1024L * 1024L * 1024L) // 1 GB
+#define TOTAL_SIZE (3ULL * 1024L * 1024L * 1024L) // 3 GB
 
 static void mem_init()
 {
@@ -204,7 +209,10 @@ int main() {
 				mask = 1ULL << j;
 				if (*send & mask) {
 					id = i * BITS_PER_EVENT + j;
+					printf("id: %d (i: %d, j: %d), seq_addr[id]: %lu, seq: %lu\n", id, i, j, seq_addr[id], seq);
+					printf("%d\n", id);
 					ureq = ureq_addr + id;
+					ureq_print(ureq);
 					if (seq_addr[id] == seq) {
 						buf = mem + (ureq->pos * 4096ULL);
 						page_buf = get_buf_addr(data_addr, id);

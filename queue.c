@@ -56,10 +56,14 @@ uint64_t cheeze_push(struct request *rq, struct cheeze_req **preq) {
 		}
 	}
 
+	pr_info("%s:%d\n", __func__, __LINE__);
+
 	while(down_interruptible(&slots) == -EINTR) {
 		//pr_info("interrupt - 1\n");
 	}
+	pr_info("%s:%d\n", __func__, __LINE__);
 	spin_lock_irqsave(&queue_spin, irqflags);
+	pr_info("%s:%d\n", __func__, __LINE__);
 
 	item = list_first_entry(&free_tag_list, struct cheeze_queue_item, tag_list);
 	list_move_tail(&item->tag_list, &processing_tag_list);
@@ -67,6 +71,9 @@ uint64_t cheeze_push(struct request *rq, struct cheeze_req **preq) {
 
 	req = reqs + id;		/* Insert the item */
 	*preq = req;
+
+	req->rq = rq;
+	req->is_rw = is_rw;
 
 	req->user.op = op;
 	req->user.pos = (blk_rq_pos(rq) << SECTOR_SHIFT) >> CHEEZE_LOGICAL_BLOCK_SHIFT;
@@ -76,10 +83,13 @@ uint64_t cheeze_push(struct request *rq, struct cheeze_req **preq) {
 	req->item = item;
 	_seq = seq++;
 
+	pr_info("%s:%d\n", __func__, __LINE__);
 	spin_unlock_irqrestore(&queue_spin, irqflags);
+	pr_info("%s:%d\n", __func__, __LINE__);
 
 	//up(&mutex);	/* Unlock the buffer */
 	up(&items);	/* Announce available item */
+	pr_info("%s:%d\n", __func__, __LINE__);
 
 	return _seq;
 }
