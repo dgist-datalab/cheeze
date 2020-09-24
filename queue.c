@@ -23,7 +23,7 @@ static uint64_t seq;
 
 
 // Protect with lock
-//struct cheeze_req *reqs = NULL;
+struct cheeze_req *reqs = NULL;
 
 // Lock must be held and freed before and after push()
 uint64_t cheeze_push(struct cheeze_req_user *user) {
