@@ -56,21 +56,23 @@ static int cheeze_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 static int do_request(struct request *rq)
 {
 	int ret, id;
+	uint64_t seq;
 	struct cheeze_req *req;
 
-	id = cheeze_push(rq);
+	seq = cheeze_push(rq, &req);
+	id = req->user.id;
 	if (unlikely(id < 0)) {
 		if (id == SKIP)
 			return 0;
 		return id;
 	}
 
-	req = reqs + id;
+	send_req(req, id, seq);
 
 	wait_for_completion(&req->acked);
 
 	ret = req->ret;
-	cheeze_pop(id);
+	cheeze_move_pop(id);
 
 	return ret;
 }

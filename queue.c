@@ -19,17 +19,19 @@
 static struct semaphore slots, items;
 static struct list_head free_tag_list, processing_tag_list; 
 static spinlock_t queue_spin;
+static uint64_t seq;
 
 
 // Protect with lock
 struct cheeze_req *reqs = NULL;
 
 // Lock must be held and freed before and after push()
-int cheeze_push(struct request *rq) {
+uint64_t cheeze_push(struct request *rq, struct cheeze_req **preq) {
 	struct cheeze_req *req;
 	int id, op;
 	bool is_rw = true;
 	unsigned long irqflags;
+	uint64_t _seq;
 	struct cheeze_queue_item *item; 
 
 	op = req_op(rq);
@@ -58,24 +60,13 @@ int cheeze_push(struct request *rq) {
 		//pr_info("interrupt - 1\n");
 	}
 	spin_lock_irqsave(&queue_spin, irqflags);
-	//while(down_interruptible(&mutex) == -EINTR) {
-	//	pr_info("interrupt - 2\n");
-	//}
-	//down(&mutex);
 
 	item = list_first_entry(&free_tag_list, struct cheeze_queue_item, tag_list);
 	list_move_tail(&item->tag_list, &processing_tag_list);
 	id = item->id;
 
-	//id = (rear + 1) % CHEEZE_QUEUE_SIZE; // XXX: Overflow?
-
-	//pr_info("pushing %d(buf_len: %d)\n", id, user->buf_len);
-
-	//rear = id;
 	req = reqs + id;		/* Insert the item */
-
-	req->rq = rq;
-	req->is_rw = is_rw;
+	*preq = req;
 
 	req->user.op = op;
 	req->user.pos = (blk_rq_pos(rq) << SECTOR_SHIFT) >> CHEEZE_LOGICAL_BLOCK_SHIFT;
@@ -83,13 +74,14 @@ int cheeze_push(struct request *rq) {
 	req->user.id = id;
 	reinit_completion(&req->acked);
 	req->item = item;
+	_seq = seq++;
 
 	spin_unlock_irqrestore(&queue_spin, irqflags);
 
 	//up(&mutex);	/* Unlock the buffer */
 	up(&items);	/* Announce available item */
 
-	return id;
+	return _seq;
 }
 
 // Queue is locked until pop
@@ -102,17 +94,11 @@ struct cheeze_req *cheeze_peek(void) {
 	if (unlikely(ret < 0))
 		return NULL;
 
-	/* Lock the buffer */
-	//down(&mutex);
 	spin_lock_irqsave(&queue_spin, irqflags);
-	//while(down_interruptible(&mutex) == -EINTR) {
-	//	pr_info("interrupt - 3\n");
-	//}
 	item = list_first_entry(&processing_tag_list, struct cheeze_queue_item, tag_list);
 	list_del(&item->tag_list);
 	id = item->id;
 
-	//id = (front + 1) % CHEEZE_QUEUE_SIZE;	/* Remove the item */
 	spin_unlock_irqrestore(&queue_spin, irqflags);
 
 	return reqs + id;
@@ -128,22 +114,33 @@ void cheeze_pop(int id) {
 	req = reqs + id;
 	
 	item = req->item;
-	//list_move_tail(&item->tag_list, &free_tag_list);
 	list_add_tail(&item->tag_list, &free_tag_list);
 
 	spin_unlock_irqrestore(&queue_spin, irqflags);
 
-	//up(&mutex);	/* Unlock the buffer */
 	up(&slots);	/* Announce available slot */
 }
 
+void cheeze_move_pop(int id) {
+	unsigned long irqflags;
+	struct cheeze_queue_item *item;
+	struct cheeze_req *req;
 
+	spin_lock_irqsave(&queue_spin, irqflags);
+
+	req = reqs + id;
+	
+	item = req->item;
+	list_move_tail(&item->tag_list, &free_tag_list);
+
+	spin_unlock_irqrestore(&queue_spin, irqflags);
+
+	up(&slots);	/* Announce available slot */
+}
 
 void cheeze_queue_init(void) {
 	int i;
 	struct cheeze_queue_item *item;
-	//front = rear = 0;	/* Empty buffer iff front == rear */
-	//sema_init(&mutex, 1);	/* Binary semaphore for locking */
 	INIT_LIST_HEAD(&free_tag_list);
 	INIT_LIST_HEAD(&processing_tag_list);
 	spin_lock_init(&queue_spin);
@@ -157,6 +154,7 @@ void cheeze_queue_init(void) {
 
 	sema_init(&slots, CHEEZE_QUEUE_SIZE);	/* Initially, buf has n empty slots */
 	sema_init(&items, 0);	/* Initially, buf has zero data items */
+	seq = 0;
 }
 
 

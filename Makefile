@@ -1,6 +1,6 @@
 ifneq ($(KERNELRELEASE),)
 	obj-m	 := cheeze.o
-	cheeze-y := blk.o chr.o queue.o
+	cheeze-y := blk.o chr.o queue.o shm.o
 
 	# EXTRA_CFLAGS += -DDEBUG
 else
