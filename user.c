@@ -96,17 +96,40 @@ static inline uint64_t ts_to_ns(struct timespec* ts) {
 	return ts->tv_sec * (uint64_t)1000000000L + ts->tv_nsec;
 }
 
+#define TOTAL_SIZE (1024L * 1024L * 1024L) // 1 GB
+
+static void *mem;
+
+static void mem_init()
+{
+	uint64_t pagesize, addr, len;
+	int fd;
+
+	fd = open("/dev/mem", O_RDWR);
+	if (fd == -1) {
+		perror("Failed to open /dev/mem");
+		exit(1);
+	}
+
+	pagesize = getpagesize();
+	addr = PHYS_ADDR & (~(pagesize - 1));
+	len = (PHYS_ADDR & (pagesize - 1)) + TOTAL_SIZE;
+	mem = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, addr);
+	if (mem == MAP_FAILED) {
+		perror("Failed to mmap plain device path");
+		exit(1);
+	}
+
+	close(fd);
+}
+
 int main() {
 	int chrfd, copyfd;
 	char *mem;
 	ssize_t r;
 	struct cheeze_req_user req;
 
-	chrfd = open("/dev/cheeze_chr", O_RDWR);
-	if (chrfd < 0) {
-		perror("Failed to open /dev/cheeze_chr");
-		return 1;
-	}
+	mem_init();
 
 	copyfd = open(COPY_TARGET, O_RDWR);
 	if (copyfd < 0) {
