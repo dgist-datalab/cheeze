@@ -177,9 +177,8 @@ static void mem_init()
 int main() {
 	int copyfd;
 	char *mem;
-	uint64_t *send, *recv;
-	int i, id, j;
-	uint64_t mask;
+	uint8_t *send, *recv;
+	int i, id;
 	struct cheeze_req_user *ureq;
 	char *buf, *page_buf;
 
