@@ -16,8 +16,8 @@
 
 static void *page_addr[3];
 //static void *meta_addr; // page_addr[0] ==> send_event_addr, recv_event_addr, seq_addr, ureq_addr
-static uint64_t *send_event_addr; // CHEEZE_QUEUE_SIZE ==> 16B
-static uint64_t *recv_event_addr; // 16B
+static uint8_t *send_event_addr; // CHEEZE_QUEUE_SIZE ==> 16B
+static uint8_t *recv_event_addr; // 16B
 static uint64_t *seq_addr; // 8KB
 static struct cheeze_req_user *ureq_addr; // sizeof(req) * 1024
 void *cheeze_data_addr[2]; // page_addr[1]: 1GB, page_addr[2]: 1GB
@@ -81,7 +81,7 @@ static void do_request(struct cheeze_req *req)
 }
 
 int send_req (struct cheeze_req *req, int id, uint64_t seq) {
-	uint64_t *send = &send_event_addr[ (id / BITS_PER_EVENT) ];
+	uint8_t *send =&send_event_addr[id];
 	// char *buf = get_buf_addr(id);
 	// struct cheeze_req_user *ureq = ureq_addr + id;
 	// caller should be call memcpy to reqs before calling this function
@@ -90,7 +90,8 @@ int send_req (struct cheeze_req *req, int id, uint64_t seq) {
 	seq_addr[id] = seq;
 	pr_debug("%s: id = %d, seq = %llu\n", __func__, id, seq);
 	/* memory barrier XXX:Arm */
-	*send = *send | (1ULL << (id % BITS_PER_EVENT));
+	//*send = *send | (1ULL << (id % BITS_PER_EVENT));
+	*send = 1;
 	/* memory barrier XXX:Arm */
 	return 0;
 }
@@ -101,23 +102,19 @@ static void recv_req (void) {
 	uint64_t mask;
 	struct cheeze_req *req;
 
-	for (i = 0; i < CHEEZE_QUEUE_SIZE / BITS_PER_EVENT; i++) {
+	for (i = 0; i < CHEEZE_QUEUE_SIZE; i++) {
 		recv = &recv_event_addr[i];
-		for (j = 0; j < BITS_PER_EVENT; j++) {
-			mask = 1ULL << j;
-			if (*recv & mask) {
-				id = i * BITS_PER_EVENT + j;
-				pr_debug("%s: id = %d (i: %d, j: %d)\n", __func__, id, i, j);
-				req = reqs + id;
-				// XXX: Optimize with zerocopy
-				memcpy(&req->user, ureq_addr + id, sizeof(struct cheeze_req_user));
-				ureq_print(req->user);
-				do_request(req);
-
+		if (*recv) {
+			id = i;
+			pr_debug("%s: id = %d (i: %d, j: %d)\n", __func__, id, i, j);
+			req = reqs + id;
+			// XXX: Optimize with zerocopy
+			memcpy(&req->user, ureq_addr + id, sizeof(struct cheeze_req_user));
+			ureq_print(req->user);
+			do_request(req);
 				/* memory barrier XXX:Arm */
-				*recv = *recv & ~mask;
-				/* memory barrier XXX:Arm */
-			}
+			*recv = 0;
+			/* memory barrier XXX:Arm */
 		}
 	}
 }

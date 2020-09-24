@@ -24,10 +24,10 @@
 #define EVENT_BYTES (CHEEZE_QUEUE_SIZE / BITS_PER_EVENT)
 
 #define SEND_OFF 0
-#define SEND_SIZE (EVENT_BYTES * sizeof(uint64_t))
+#define SEND_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint8_t))
 
 #define RECV_OFF (SEND_OFF + SEND_SIZE)
-#define RECV_SIZE (EVENT_BYTES * sizeof(uint64_t))
+#define RECV_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint8_t))
 
 #define SEQ_OFF (RECV_OFF + RECV_SIZE)
 #define SEQ_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint64_t))
@@ -202,36 +202,33 @@ int main() {
 	close(copyfd);
 
 	while (1) {
-		for (i = 0; i < CHEEZE_QUEUE_SIZE / BITS_PER_EVENT; i++) {
+		for (i = 0; i < CHEEZE_QUEUE_SIZE; i++) {
 			send = &send_event_addr[i];
 			recv = &recv_event_addr[i];
-			for (j = 0; j < BITS_PER_EVENT; j++) {
-				mask = 1ULL << j;
-				if (*send & mask) {
-					id = i * BITS_PER_EVENT + j;
-					// printf("id: %d (i: %d, j: %d), seq_addr[id]: %lu, seq: %lu\n", id, i, j, seq_addr[id], seq);
-					ureq = ureq_addr + id;
-					// ureq_print(ureq);
-					if (seq_addr[id] == seq) {
-						buf = mem + (ureq->pos * 4096ULL);
-						page_buf = get_buf_addr(data_addr, id);
-						switch (ureq->op) {
-							case REQ_OP_READ:
-								memcpy(page_buf, buf, ureq->len);
-								break;
-							case REQ_OP_WRITE:
-								memcpy(buf, page_buf, ureq->len);
-								break;
-							case REQ_OP_DISCARD:
-								memset(buf, 0, ureq->len);
-								break;
-						}
-						seq++;
-						*send = *send & ~mask;
-						*recv = *recv | mask;
-					} else {
-						continue;
+			if (*send) {
+				id = i;
+				// printf("id: %d (i: %d, j: %d), seq_addr[id]: %lu, seq: %lu\n", id, i, j, seq_addr[id], seq);
+				ureq = ureq_addr + id;
+				// ureq_print(ureq);
+				if (seq_addr[id] == seq) {
+					buf = mem + (ureq->pos * 4096ULL);
+					page_buf = get_buf_addr(data_addr, id);
+					switch (ureq->op) {
+						case REQ_OP_READ:
+							memcpy(page_buf, buf, ureq->len);
+							break;
+						case REQ_OP_WRITE:
+							memcpy(buf, page_buf, ureq->len);
+							break;
+						case REQ_OP_DISCARD:
+							memset(buf, 0, ureq->len);
+							break;
 					}
+					seq++;
+					*send = 0;
+					*recv = 1;
+				} else {
+					continue;
 				}
 			}
 		}

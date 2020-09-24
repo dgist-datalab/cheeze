@@ -24,10 +24,10 @@
 #define EVENT_BYTES (CHEEZE_QUEUE_SIZE / BITS_PER_EVENT)
 
 #define SEND_OFF 0
-#define SEND_SIZE (EVENT_BYTES * sizeof(uint64_t))
+#define SEND_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint8_t))
 
 #define RECV_OFF (SEND_OFF + SEND_SIZE)
-#define RECV_SIZE (EVENT_BYTES * sizeof(uint64_t))
+#define RECV_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint8_t))
 
 #define SEQ_OFF (RECV_OFF + RECV_SIZE)
 #define SEQ_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint64_t))
