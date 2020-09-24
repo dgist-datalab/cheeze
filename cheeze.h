@@ -17,7 +17,8 @@
 
 #define CHEEZE_QUEUE_SIZE 1024
 #define CHEEZE_BUF_SIZE (2ULL * 1024 * 1024)
-#define ITEMS_PER_HP ((1ULL * 1024 * 1024 * 1024) / CHEEZE_BUF_SIZE)
+#define HP_SIZE (1024L * 1024L * 1024L)
+#define ITEMS_PER_HP (HP_SIZE / CHEEZE_BUF_SIZE)
 #define BITS_PER_EVENT (sizeof(uint64_t) * 8)
 
 #define EVENT_BYTES (CHEEZE_QUEUE_SIZE / BITS_PER_EVENT)
@@ -88,6 +89,7 @@ void cheeze_queue_init(void);
 void cheeze_queue_exit(void);
 
 //shm.c
+void __exit shm_exit(void);
 int send_req (struct cheeze_req *req, int id, uint64_t seq);
 static inline char *get_buf_addr(char **pdata_addr, int id) {
 	int idx = id / ITEMS_PER_HP;

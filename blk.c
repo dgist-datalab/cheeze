@@ -301,17 +301,6 @@ static int __init cheeze_init(void)
 		goto free_devices;
 	}
 
-	cheeze_chr_class = class_create(THIS_MODULE, "cheeze_chr");
-	if (IS_ERR(cheeze_chr_class)) {
-		ret = PTR_ERR(cheeze_chr_class);
-		pr_warn("Failed to register class cheeze_chr\n");
-		goto destroy_devices;
-	}
-
-	ret = cheeze_chr_init_module();
-	if (ret)
-		goto destroy_chr;
-
 	reqs = kzalloc(sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE, GFP_KERNEL);
 	if (reqs == NULL) {
 		pr_err("%s %d: Unable to allocate memory for cheeze_req\n", __func__, __LINE__);
@@ -325,10 +314,6 @@ static int __init cheeze_init(void)
 	return 0;
 
 nomem:
-	cheeze_chr_cleanup_module();
-destroy_chr:
-	class_destroy(cheeze_chr_class);
-destroy_devices:
 	destroy_device();
 free_devices:
 	unregister_blkdev(cheeze_major, "cheeze");
@@ -342,9 +327,7 @@ static void __exit cheeze_exit(void)
 
 	kfree(reqs);
 
-	cheeze_chr_cleanup_module();
-
-	class_destroy(cheeze_chr_class);
+	shm_exit();
 
 	destroy_device();
 
