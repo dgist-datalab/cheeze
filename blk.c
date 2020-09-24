@@ -29,9 +29,11 @@ struct class *cheeze_chr_class;
 void cheeze_io(struct cheeze_req_user *user, void *(*cb)(void *data), void *extra)
 {
 	int id;
+	uint64_t seq;
 	struct cheeze_req *req;
 
-	id = cheeze_push(user);
+	seq = cheeze_push(user);
+	id = user->id;
 
 	if (cb) {
 		cb(extra);
@@ -39,9 +41,11 @@ void cheeze_io(struct cheeze_req_user *user, void *(*cb)(void *data), void *extr
 
 	req = reqs + id;
 
+	send_req(req, id, seq);
+
 	wait_for_completion(&req->acked);
 
-	cheeze_pop(id);
+	cheeze_move_pop(id);
 }
 EXPORT_SYMBOL(cheeze_io);
 
@@ -49,6 +53,7 @@ int cheeze_init(void)
 {
 	int ret, i;
 
+	/*
 	cheeze_chr_class = class_create(THIS_MODULE, "cheeze_chr");
 	if (IS_ERR(cheeze_chr_class)) {
 		ret = PTR_ERR(cheeze_chr_class);
@@ -66,17 +71,19 @@ int cheeze_init(void)
 		ret = -ENOMEM;
 		goto nomem;
 	}
+	*/
 	cheeze_queue_init();
 	for (i = 0; i < CHEEZE_QUEUE_SIZE; i++)
 		init_completion(&reqs[i].acked);
 
 	return 0;
-
+/*
 nomem:
 	cheeze_chr_cleanup_module();
 destroy_chr:
 	class_destroy(cheeze_chr_class);
 out:
+*/
 	return ret;
 }
 
@@ -85,6 +92,6 @@ void cheeze_exit(void)
 	cheeze_queue_exit();
 	kfree(reqs);
 
-	cheeze_chr_cleanup_module();
-	class_destroy(cheeze_chr_class);
+	//cheeze_chr_cleanup_module();
+	//class_destroy(cheeze_chr_class);
 }
