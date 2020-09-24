@@ -42,8 +42,8 @@
 
 static void *page_addr;
 //static void *meta_addr; // page_addr[0] ==> send_event_addr, recv_event_addr, seq_addr, ureq_addr
-static uint64_t *send_event_addr; // CHEEZE_QUEUE_SIZE ==> 16B
-static uint64_t *recv_event_addr; // 16B
+static uint8_t *send_event_addr; // CHEEZE_QUEUE_SIZE ==> 16B
+static uint8_t *recv_event_addr; // 16B
 static uint64_t *seq_addr; // 8KB
 struct cheeze_req_user *ureq_addr; // sizeof(req) * 1024
 static char *data_addr[2]; // page_addr[1]: 1GB, page_addr[2]: 1GB
