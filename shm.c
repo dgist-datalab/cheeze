@@ -27,7 +27,7 @@ int send_req (struct cheeze_req *req, int id, uint64_t seq) {
 	char *buf = get_buf_addr(data_addr, id);
 	struct cheeze_req_user *ureq = ureq_addr + id;
 	// caller should be call memcpy to reqs before calling this function
-	memcpy(buf, req->user->buf, CHEEZE_BUF_SIZE);
+	memcpy(buf, req->user->buf, req->user->buf_len);
 	memcpy(ureq, req->user, sizeof(*ureq));
 	seq_addr[id] = seq;
 	/* memory barrier XXX:Arm */
