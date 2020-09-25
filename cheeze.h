@@ -8,22 +8,23 @@
 
 #define CHEEZE_QUEUE_SIZE 1024
 #define CHEEZE_BUF_SIZE (2ULL * 1024 * 1024)
-#define ITEMS_PER_HP ((1ULL * 1024 * 1024 * 1024) / CHEEZE_BUF_SIZE)
+#define HP_SIZE (1024L * 1024L * 1024L)
+#define ITEMS_PER_HP (HP_SIZE / CHEEZE_BUF_SIZE)
 #define BITS_PER_EVENT (sizeof(uint64_t) * 8)
 
 #define EVENT_BYTES (CHEEZE_QUEUE_SIZE / BITS_PER_EVENT)
 
 #define SEND_OFF 0
-#define SEND_SIZE EVENT_BYTES
+#define SEND_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint8_t))
 
 #define RECV_OFF (SEND_OFF + SEND_SIZE)
-#define RECV_SIZE EVENT_BYTES
+#define RECV_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint8_t))
 
 #define SEQ_OFF (RECV_OFF + RECV_SIZE)
-#define SEQ_SIZE (sizeof(uint64_t) * CHEEZE_QUEUE_SIZE)
+#define SEQ_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint64_t))
 
 #define REQS_OFF (SEQ_OFF + SEQ_SIZE)
-#define REQS_SIZE (sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE)
+#define REQS_SIZE (CHEEZE_QUEUE_SIZE * sizeof(struct cheeze_req))
 
 #define SKIP INT_MIN
 
@@ -82,6 +83,7 @@ static inline char *get_buf_addr(char **pdata_addr, int id) {
 	int idx = id / ITEMS_PER_HP;
 	return pdata_addr[idx] + (id * CHEEZE_BUF_SIZE);
 }
+void shm_exit(void);
 
 #endif
 

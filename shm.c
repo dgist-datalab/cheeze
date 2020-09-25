@@ -12,17 +12,18 @@
 
 static void *page_addr[3];
 //static void *meta_addr; // page_addr[0] ==> send_event_addr, recv_event_addr, seq_addr, ureq_addr
-static uint64_t *send_event_addr; // CHEEZE_QUEUE_SIZE ==> 16B
-static uint64_t *recv_event_addr; // 16B
+static uint8_t *send_event_addr; // CHEEZE_QUEUE_SIZE ==> 16B
+static uint8_t *recv_event_addr; // 16B
 static uint64_t *seq_addr; // 8KB
 struct cheeze_req_user *ureq_addr; // sizeof(req) * 1024
 static char *data_addr[2]; // page_addr[1]: 1GB, page_addr[2]: 1GB
 
 static struct task_struct *shm_task = NULL;
+static void shm_meta_init(void *ppage_addr);
+static void shm_data_init(void **ppage_addr);
 
 int send_req (struct cheeze_req *req, int id, uint64_t seq) {
-	int idx = id / CHEEZE_QUEUE_SIZE;
-	uint64_t *send = &send_event_addr[ (id / BITS_PER_EVENT) ];
+	uint8_t *send = &send_event_addr[id];
 	char *buf = get_buf_addr(data_addr, id);
 	struct cheeze_req_user *ureq = ureq_addr + id;
 	// caller should be call memcpy to reqs before calling this function
@@ -30,38 +31,36 @@ int send_req (struct cheeze_req *req, int id, uint64_t seq) {
 	memcpy(ureq, req->user, sizeof(*ureq));
 	seq_addr[id] = seq;
 	/* memory barrier XXX:Arm */
-	*send = *send | (1ULL << (id % BITS_PER_EVENT));
+	*send = 1;
 	/* memory barrier XXX:Arm */
 	return 0;
 }
 
 static void recv_req (void) {
-	uint64_t *recv;
-	int i, id, j;
-	uint64_t mask;
+	uint8_t *recv;
+	int i, id;
 	struct cheeze_req *req;
 	struct cheeze_req_user *ureq;
+	char *buf;
 
-	for (i = 0; i < CHEEZE_QUEUE_SIZE / BITS_PER_EVENT; i++) {
+	for (i = 0; i < CHEEZE_QUEUE_SIZE; i++) {
 		recv = &recv_event_addr[i];
-		for (j = 0; j < BITS_PER_EVENT; j++) {
-			mask = 1ULL << j;
-			if (*recv & mask) {
-				id = i * BITS_PER_EVENT + j;
-				req = reqs + id;
-				ureq = ureq_addr + id;
-				if (ureq->ret_buf == NULL) { // SET
-					complete(&req->acked);
-				} else {
-					if (ureq->ubuf_len != 0) { // GET
-						memcpy(ureq->ret_buf, ureq->buf, ureq->ubuf_len);
-					}
-					complete(&req->acked);
+		if (*recv) {
+			id = i;
+			req = reqs + id;
+			ureq = ureq_addr + id;
+			buf = get_buf_addr(data_addr, id);
+			if (ureq->ret_buf == NULL) { // SET
+				complete(&req->acked);
+			} else {
+				if (ureq->ubuf_len != 0) { // GET
+					memcpy(ureq->ret_buf, buf, ureq->ubuf_len);
 				}
-				/* memory barrier XXX:Arm */
-				*recv = *recv & ~mask;
-				/* memory barrier XXX:Arm */
+				complete(&req->acked);
 			}
+			/* memory barrier XXX:Arm */
+			*recv = 0;
+			/* memory barrier XXX:Arm */
 		}
 	}
 }
@@ -76,9 +75,10 @@ static int shm_kthread(void *unused)
 	return 0;
 }
 
-static int set_page_addr0(const char *val, const struct kernel_param *kp)
+static int set_page_addr(const char *val, const struct kernel_param *kp)
 {
 	unsigned long dst;
+	void *mem;
 	int ret;
 
 	if (strncmp(val, "0x", 2))
@@ -90,78 +90,29 @@ static int set_page_addr0(const char *val, const struct kernel_param *kp)
 		return ret;
 
 	pr_info("Setting 0x%lx as page address\n", dst);
-	page_addr[0] = phys_to_virt(dst);
-	pr_info("page_addr: 0x%px\n", page_addr[0]);
+
+	mem = phys_to_virt(dst);
+
+	page_addr[0] = ioremap_nocache(dst, HP_SIZE * 3);
+	page_addr[1] = page_addr[0] + HP_SIZE;
+	page_addr[2] = page_addr[1] + HP_SIZE;
+
+	pr_info("page_addr[0]: 0x%px\n", page_addr[0]);
+	pr_info("page_addr[1]: 0x%px\n", page_addr[1]);
+	pr_info("page_addr[2]: 0x%px\n", page_addr[2]);
+
+	shm_meta_init(page_addr[0]);
+	shm_data_init(page_addr);
 
 	return ret;
 }
 
-const struct kernel_param_ops page_addr_ops0 = {
-	.set = set_page_addr0,
+const struct kernel_param_ops page_addr_ops = {
+	.set = set_page_addr,
 	.get = NULL
 };
 
-module_param_cb(page_addr0, &page_addr_ops0, NULL, 0644);
-
-
-
-static int set_page_addr1(const char *val, const struct kernel_param *kp)
-{
-	unsigned long dst;
-	int ret;
-
-	if (strncmp(val, "0x", 2))
-		ret = kstrtoul(val, 16, &dst);
-	else
-		ret = kstrtoul(val + 2, 16, &dst);
-
-	if (ret < 0)
-		return ret;
-
-	pr_info("Setting 0x%lx as page address\n", dst);
-	page_addr[1] = phys_to_virt(dst);
-	pr_info("page_addr: 0x%px\n", page_addr[1]);
-
-	return ret;
-}
-
-const struct kernel_param_ops page_addr_ops1 = {
-	.set = set_page_addr1,
-	.get = NULL
-};
-
-module_param_cb(page_addr1, &page_addr_ops1, NULL, 0644);
-
-
-
-static int set_page_addr2(const char *val, const struct kernel_param *kp)
-{
-	unsigned long dst;
-	int ret;
-
-	if (strncmp(val, "0x", 2))
-		ret = kstrtoul(val, 16, &dst);
-	else
-		ret = kstrtoul(val + 2, 16, &dst);
-
-	if (ret < 0)
-		return ret;
-
-	pr_info("Setting 0x%lx as page address\n", dst);
-	page_addr[2] = phys_to_virt(dst);
-	pr_info("page_addr: 0x%px\n", page_addr[2]);
-
-	return ret;
-}
-
-const struct kernel_param_ops page_addr_ops2 = {
-	.set = set_page_addr2,
-	.get = NULL
-};
-
-module_param_cb(page_addr2, &page_addr_ops2, NULL, 0644);
-
-
+module_param_cb(page_addr, &page_addr_ops, NULL, 0644);
 
 static bool enable;
 static int enable_param_set(const char *val, const struct kernel_param *kp)
@@ -196,8 +147,8 @@ module_param_cb(enabled, &enable_param_ops, &enable, 0644);
 
 static void shm_meta_init(void *ppage_addr) {
 	memset(ppage_addr, 0, (1ULL * 1024 * 1024 * 1024));
-	send_event_addr = ppage_addr + SEND_OFF; // CHEEZE_QUEUE_SIZE ==> 16B
-	recv_event_addr = ppage_addr + RECV_OFF; // 16B
+	send_event_addr = ppage_addr + SEND_OFF; // CHEEZE_QUEUE_SIZE ==> 1024B
+	recv_event_addr = ppage_addr + RECV_OFF; // 1024B
 	seq_addr = ppage_addr + SEQ_OFF; // 8KB
 	ureq_addr = ppage_addr + REQS_OFF; // sizeof(req) * 1024
 }
@@ -207,7 +158,7 @@ static void shm_data_init(void **ppage_addr) {
 	data_addr[1] = ppage_addr[2];
 }
 
-static void __exit shm_exit(void)
+void shm_exit(void)
 {
 	if (!shm_task)
 		return;

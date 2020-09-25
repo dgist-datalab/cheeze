@@ -91,6 +91,7 @@ out:
 
 void cheeze_exit(void)
 {
+	shm_exit();
 	cheeze_queue_exit();
 	kfree(reqs);
 
