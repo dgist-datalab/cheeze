@@ -50,6 +50,7 @@ static void recv_req (void) {
 			req = reqs + id;
 			ureq = ureq_addr + id;
 			buf = get_buf_addr(data_addr, id);
+			memcpy(req->user, ureq, sizeof(cheeze_req_user));
 			if (ureq->ret_buf == NULL) { // SET
 				complete(&req->acked);
 			} else {
