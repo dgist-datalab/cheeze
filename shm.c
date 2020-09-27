@@ -97,13 +97,12 @@ int send_req (struct cheeze_req *req, int id, uint64_t seq) {
 }
 
 static void recv_req (void) {
-	uint64_t *recv;
+	uint8_t *recv;
 	int i, id, j;
-	uint64_t mask;
 	struct cheeze_req *req;
 
 	for (i = 0; i < CHEEZE_QUEUE_SIZE; i++) {
-		recv = &recv_event_addr[i];
+		recv = recv_event_addr + i;
 		if (*recv) {
 			id = i;
 			pr_debug("%s: id = %d (i: %d, j: %d)\n", __func__, id, i, j);
