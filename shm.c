@@ -50,7 +50,7 @@ static void recv_req (void) {
 			req = reqs + id;
 			ureq = ureq_addr + id;
 			buf = get_buf_addr(data_addr, id);
-			memcpy(req->user, ureq, sizeof(cheeze_req_user));
+			memcpy(req->user, ureq, sizeof(struct cheeze_req_user));
 			if (ureq->ret_buf == NULL) { // SET
 				complete(&req->acked);
 			} else {
@@ -76,10 +76,9 @@ static int shm_kthread(void *unused)
 	return 0;
 }
 
-static int set_page_addr(const char *val, const struct kernel_param *kp)
+static int set_page_addr0(const char *val, const struct kernel_param *kp)
 {
 	unsigned long dst;
-	void *mem;
 	int ret;
 
 	if (strncmp(val, "0x", 2))
@@ -90,16 +89,59 @@ static int set_page_addr(const char *val, const struct kernel_param *kp)
 	if (ret < 0)
 		return ret;
 
-	pr_info("Setting 0x%lx as page address\n", dst);
-
-	mem = phys_to_virt(dst);
-
-	page_addr[0] = ioremap_nocache(dst, HP_SIZE * 3);
-	page_addr[1] = page_addr[0] + HP_SIZE;
-	page_addr[2] = page_addr[1] + HP_SIZE;
-
+	page_addr[0] = phys_to_virt(dst);;
 	pr_info("page_addr[0]: 0x%px\n", page_addr[0]);
+
+	return ret;
+}
+
+const struct kernel_param_ops page_addr_ops0 = {
+	.set = set_page_addr0,
+	.get = NULL
+};
+
+module_param_cb(page_addr0, &page_addr_ops0, NULL, 0644);
+
+static int set_page_addr1(const char *val, const struct kernel_param *kp)
+{
+	unsigned long dst;
+	int ret;
+
+	if (strncmp(val, "0x", 2))
+		ret = kstrtoul(val, 16, &dst);
+	else
+		ret = kstrtoul(val + 2, 16, &dst);
+
+	if (ret < 0)
+		return ret;
+
+	page_addr[1] = phys_to_virt(dst);;
 	pr_info("page_addr[1]: 0x%px\n", page_addr[1]);
+
+	return ret;
+}
+
+const struct kernel_param_ops page_addr_ops1 = {
+	.set = set_page_addr1,
+	.get = NULL
+};
+
+module_param_cb(page_addr1, &page_addr_ops1, NULL, 0644);
+
+static int set_page_addr2(const char *val, const struct kernel_param *kp)
+{
+	unsigned long dst;
+	int ret;
+
+	if (strncmp(val, "0x", 2))
+		ret = kstrtoul(val, 16, &dst);
+	else
+		ret = kstrtoul(val + 2, 16, &dst);
+
+	if (ret < 0)
+		return ret;
+
+	page_addr[2] = phys_to_virt(dst);;
 	pr_info("page_addr[2]: 0x%px\n", page_addr[2]);
 
 	shm_meta_init(page_addr[0]);
@@ -108,12 +150,12 @@ static int set_page_addr(const char *val, const struct kernel_param *kp)
 	return ret;
 }
 
-const struct kernel_param_ops page_addr_ops = {
-	.set = set_page_addr,
+const struct kernel_param_ops page_addr_ops2 = {
+	.set = set_page_addr2,
 	.get = NULL
 };
 
-module_param_cb(page_addr, &page_addr_ops, NULL, 0644);
+module_param_cb(page_addr2, &page_addr_ops2, NULL, 0644);
 
 static bool enable;
 static int enable_param_set(const char *val, const struct kernel_param *kp)
