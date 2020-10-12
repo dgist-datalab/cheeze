@@ -25,27 +25,46 @@
 /* Globals */
 struct class *cheeze_chr_class;
 
-/* Serve requests from koo */
-void cheeze_io(struct cheeze_req_user *user, void *(*cb)(void *data), void *extra)
-{
+extern char *data_addr[2];
+
+uint64_t cheeze_prepare_io(struct cheeze_req_user *user, char sync) {
 	int id;
 	uint64_t seq;
 	struct cheeze_req *req;
-
+	
 	seq = cheeze_push(user);
 	id = user->id;
+	req = reqs + id;
 
-	if (cb) {
-		cb(extra);
-	}
+	user->buf = get_buf_addr(data_addr, id);
+	req->sync = sync;
+
+	return seq;
+}
+
+void cheeze_free_io(int id) {
+	cheeze_move_pop(id);
+}
+
+/* Serve requests from koo */
+void cheeze_io(struct cheeze_req_user *user, void *(*cb)(void *data), void *extra, uint64_t seq) 
+{
+	int id;
+	struct cheeze_req *req;
+
+	id = user->id;
 
 	req = reqs + id;
 
 	send_req(req, id, seq);
 
-	wait_for_completion(&req->acked);
+	if (cb) {
+		cb(extra);
+	}
 
-	cheeze_move_pop(id);
+	//if (req->sync)
+	wait_for_completion(&req->acked);
+	//cheeze_move_pop(id);
 }
 EXPORT_SYMBOL(cheeze_io);
 
@@ -66,7 +85,7 @@ int cheeze_init(void)
 		goto destroy_chr;
 
 	*/
-	reqs = kzalloc(sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE, GFP_NOIO);
+	reqs = kzalloc(sizeof(struct cheeze_req) * CHEEZE_QUEUE_SIZE, GFP_KERNEL);
 	if (reqs == NULL) {
 		pr_err("%s %d: Unable to allocate memory for cheeze_req\n", __func__, __LINE__);
 		ret = -ENOMEM;
@@ -76,7 +95,9 @@ int cheeze_init(void)
 	for (i = 0; i < CHEEZE_QUEUE_SIZE; i++)
 		init_completion(&reqs[i].acked);
 
-
+#ifndef BETR
+	shm_init();
+#endif
 
 	return 0;
 /*
@@ -91,7 +112,10 @@ out:
 
 void cheeze_exit(void)
 {
+#ifndef BETR
+	pr_info("cheeze_exit\n");
 	shm_exit();
+#endif
 	cheeze_queue_exit();
 	kfree(reqs);
 

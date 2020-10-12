@@ -18,6 +18,7 @@
 //static struct semaphore mutex, slots, items;
 static struct semaphore slots, items;
 static struct list_head free_tag_list, processing_tag_list; 
+static int qd = 0;
 static spinlock_t queue_spin;
 static uint64_t seq;
 
@@ -49,6 +50,8 @@ uint64_t cheeze_push(struct cheeze_req_user *user) {
 	reinit_completion(&req->acked);
 	req->item = item;
 	_seq = seq++;
+	qd++;
+	//pr_info("ID: %d, SEQ: %d\n", id, _seq);
 
 	spin_unlock_irqrestore(&queue_spin, irqflags);
 
@@ -89,6 +92,7 @@ void cheeze_pop(int id) {
 	
 	item = req->item;
 	list_add_tail(&item->tag_list, &free_tag_list);
+	qd--;
 
 	spin_unlock_irqrestore(&queue_spin, irqflags);
 
@@ -106,21 +110,43 @@ void cheeze_move_pop(int id) {
 	
 	item = req->item;
 	list_move_tail(&item->tag_list, &free_tag_list);
+	qd--;
 
 	spin_unlock_irqrestore(&queue_spin, irqflags);
 
 	up(&slots);	/* Announce available slot */
 }
 
+static struct hrtimer qd_timer;
+static unsigned long delay_in_ms = 1000L;
+#define MS_TO_NS(x) (x * 1e6L)
+
+enum hrtimer_restart qd_print_cb (struct hrtimer *timer)
+{
+	ktime_t currtime, interval;
+	currtime = ktime_get();
+	interval = ktime_set(0, MS_TO_NS(delay_in_ms));
+	pr_info("QD: %d", qd);
+	return HRTIMER_RESTART;
+}
+
 void cheeze_queue_init(void) {
 	int i;
 	struct cheeze_queue_item *item;
+#ifdef PRINT_QD
+	ktime_t ktime;
+	ktime = ktime_set(0, MS_TO_NS(delay_in_ms));
+	hrtimer_init(&qd_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	qd_timer.function = &qd_print_cb;
+	hrtimer_start(&qd_timer, ktime, HRTIMER_MODE_REL);
+#endif
+	
 	INIT_LIST_HEAD(&free_tag_list);
 	INIT_LIST_HEAD(&processing_tag_list);
 	spin_lock_init(&queue_spin);
 
 	for (i = 0; i < CHEEZE_QUEUE_SIZE; i++) {
-		item = kzalloc(sizeof(struct cheeze_queue_item), GFP_NOIO);
+		item = kzalloc(sizeof(struct cheeze_queue_item), GFP_KERNEL);
 		item->id = i;
 		INIT_LIST_HEAD(&item->tag_list);
 		list_add_tail(&item->tag_list, &free_tag_list);
@@ -139,4 +165,7 @@ void cheeze_queue_exit(void) {
 		req = reqs + i;
 		kfree(req->item);
 	}
+#ifdef PRINT_QD
+	hrtimer_cancel(&qd_timer);
+#endif
 }

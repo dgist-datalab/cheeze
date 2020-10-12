@@ -16,7 +16,7 @@ static uint8_t *send_event_addr; // CHEEZE_QUEUE_SIZE ==> 16B
 static uint8_t *recv_event_addr; // 16B
 static uint64_t *seq_addr; // 8KB
 struct cheeze_req_user *ureq_addr; // sizeof(req) * 1024
-static char *data_addr[2]; // page_addr[1]: 1GB, page_addr[2]: 1GB
+char *data_addr[2]; // page_addr[1]: 1GB, page_addr[2]: 1GB
 
 static struct task_struct *shm_task = NULL;
 static void shm_meta_init(void *ppage_addr);
@@ -28,10 +28,17 @@ int send_req (struct cheeze_req *req, int id, uint64_t seq) {
 	struct cheeze_req_user *ureq = ureq_addr + id;
 	// caller should be call memcpy to reqs before calling this function
 	memcpy(buf, req->user->buf, req->user->buf_len);
-	memcpy(ureq, req->user, sizeof(*ureq));
+	memcpy(ureq, req->user, sizeof(struct cheeze_req_user));
 	seq_addr[id] = seq;
 	/* memory barrier XXX:Arm */
+	barrier();
+	//pr_info("[send req] send: %d\n", send_event_addr[id]);
+	if (*send) {
+		pr_info("already used!!!\n");
+	}
 	*send = 1;
+	//pr_info("[send req] user %p, user->id: %d user->buf_len: %d, user->buf: %p, user->ret_buf: %p\n", req->user, req->user->id, req->user->buf_len, req->user->buf, req->user->ret_buf);
+	//pr_info("[send req] SEND[%d]: %d, ID: %d, SEQ: %d, ureq %p, ureq->id: %d ureq->buf_len: %d, ureq->buf: %p, ureq->ret_buf: %p\n", id, send[id], id, seq, ureq, ureq->id, ureq->buf_len, ureq->buf, ureq->ret_buf);
 	/* memory barrier XXX:Arm */
 	return 0;
 }
@@ -50,16 +57,36 @@ static void recv_req (void) {
 			req = reqs + id;
 			ureq = ureq_addr + id;
 			buf = get_buf_addr(data_addr, id);
-			memcpy(req->user, ureq, sizeof(struct cheeze_req_user));
+			if (!req->sync) {
+				*recv = 0;
+				//cheeze_move_pop(id);
+				//memset(ureq, 0, sizeof(struct cheeze_req_user));
+				continue;
+			}
+
 			if (ureq->ret_buf == NULL) { // SET
+				memcpy(req->user, ureq, sizeof(struct cheeze_req_user));
 				complete(&req->acked);
 			} else {
 				if (ureq->ubuf_len != 0) { // GET
-					memcpy(ureq->ret_buf, buf, ureq->ubuf_len);
+				//pr_info("[recv req] user %p, user->id: %d user->buf_len: %d, user->buf: %p, user->ret_buf: %p user->ubuf_len: %d\n", req->user, req->user->id, req->user->buf_len, req->user->buf, req->user->ret_buf, req->user->ubuf_len);
+				//memcpy(req->user, ureq, sizeof(struct cheeze_req_user));
+					if (req->user->ubuf_len == 152) {
+						memcpy(req->user, ureq, sizeof(struct cheeze_req_user));
+						req->user->ubuf_len = 152;
+					} else {
+						memcpy(req->user, ureq, sizeof(struct cheeze_req_user));
+					}
+
+				//pr_info("[recv req] ureq %p, ureq->id: %d ureq->buf_len: %d, ureq->buf: %p, ureq->ret_buf: %p user->ubuf_len: %d\n", ureq, ureq->id, ureq->buf_len, ureq->buf, ureq->ret_buf, ureq->ubuf_len);
+					//memcpy(ureq->ret_buf, buf, req->user->ubuf_len);
 				}
 				complete(&req->acked);
 			}
 			/* memory barrier XXX:Arm */
+			//cheeze_move_pop(id);
+			//memset(ureq, 0, sizeof(struct cheeze_req_user));
+			barrier();
 			*recv = 0;
 			/* memory barrier XXX:Arm */
 		}
@@ -72,10 +99,12 @@ static int shm_kthread(void *unused)
 		recv_req();
 		cond_resched();
 	}
+	pr_info("shm stop\n");
 
 	return 0;
 }
 
+#if 0
 static int set_page_addr0(const char *val, const struct kernel_param *kp)
 {
 	unsigned long dst;
@@ -144,8 +173,8 @@ static int set_page_addr2(const char *val, const struct kernel_param *kp)
 	page_addr[2] = phys_to_virt(dst);;
 	pr_info("page_addr[2]: 0x%px\n", page_addr[2]);
 
-	shm_meta_init(page_addr[0]);
-	shm_data_init(page_addr);
+	//shm_meta_init(page_addr[0]);
+	//shm_data_init(page_addr);
 
 	return ret;
 }
@@ -187,18 +216,34 @@ static struct kernel_param_ops enable_param_ops = {
 };
 
 module_param_cb(enabled, &enable_param_ops, &enable, 0644);
+#endif
+
+void shm_init() {
+	page_addr[0] = ioremap_nocache(SHM_ADDR0, HP_SIZE);
+	page_addr[1] = ioremap_nocache(SHM_ADDR1, HP_SIZE);
+	page_addr[2] = ioremap_nocache(SHM_ADDR2, HP_SIZE);
+	shm_meta_init(page_addr[0]);
+	shm_data_init(page_addr);
+	shm_task = kthread_run(shm_kthread, NULL, "kshm");
+}
 
 static void shm_meta_init(void *ppage_addr) {
+	int i = 0;
 	memset(ppage_addr, 0, (1ULL * 1024 * 1024 * 1024));
 	send_event_addr = ppage_addr + SEND_OFF; // CHEEZE_QUEUE_SIZE ==> 1024B
 	recv_event_addr = ppage_addr + RECV_OFF; // 1024B
 	seq_addr = ppage_addr + SEQ_OFF; // 8KB
 	ureq_addr = ppage_addr + REQS_OFF; // sizeof(req) * 1024
+	//for (i = 0; i < CHEEZE_QUEUE_SIZE; i++) {
+	//	pr_info("send[%d] = %d, recv[%d] = %d\n", i, send_event_addr[i], i, recv_event_addr[i]);
+	//}
 }
 
 static void shm_data_init(void **ppage_addr) {
 	data_addr[0] = ppage_addr[1];
 	data_addr[1] = ppage_addr[2];
+	memset(data_addr[0], 0, (1ULL * 1024 * 1024 * 1024));
+	memset(data_addr[1], 0, (1ULL * 1024 * 1024 * 1024));
 }
 
 void shm_exit(void)
@@ -206,6 +251,7 @@ void shm_exit(void)
 	if (!shm_task)
 		return;
 
+	pr_info("asd\n");
 	kthread_stop(shm_task);
 	shm_task = NULL;
 }

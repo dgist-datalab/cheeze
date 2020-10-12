@@ -24,7 +24,11 @@
 #define SEQ_SIZE (CHEEZE_QUEUE_SIZE * sizeof(uint64_t))
 
 #define REQS_OFF (SEQ_OFF + SEQ_SIZE)
-#define REQS_SIZE (CHEEZE_QUEUE_SIZE * sizeof(struct cheeze_req))
+#define REQS_SIZE (CHEEZE_QUEUE_SIZE * sizeof(struct cheeze_req_user))
+
+#define SHM_ADDR0 0x800000000
+#define SHM_ADDR1 0x840000000
+#define SHM_ADDR2 0x880000000
 
 #define SKIP INT_MIN
 
@@ -57,12 +61,15 @@ struct cheeze_queue_item {
 
 struct cheeze_req {
 	struct completion acked; // Set by cheeze
+	bool sync;
 	struct cheeze_req_user *user; // Set by koo, needs to be freed by koo
 	struct cheeze_queue_item *item;
 };
 
 // blk.c
-void cheeze_io(struct cheeze_req_user *user, void *(*cb)(void *data), void *extra); // Called by koo
+uint64_t cheeze_prepare_io(struct cheeze_req_user *user, char sync);
+void cheeze_free_io(int id);
+void cheeze_io(struct cheeze_req_user *user, void *(*cb)(void *data), void *extra, uint64_t seq); // Called by koo
 extern struct class *cheeze_chr_class;
 // extern struct mutex cheeze_mutex;
 void cheeze_chr_cleanup_module(void);
@@ -81,8 +88,9 @@ void cheeze_queue_exit(void);
 int send_req (struct cheeze_req *req, int id, uint64_t seq);
 static inline char *get_buf_addr(char **pdata_addr, int id) {
 	int idx = id / ITEMS_PER_HP;
-	return pdata_addr[idx] + (id * CHEEZE_BUF_SIZE);
+	return pdata_addr[idx] + ((id % ITEMS_PER_HP) * CHEEZE_BUF_SIZE);
 }
+void shm_init(void);
 void shm_exit(void);
 
 #endif
