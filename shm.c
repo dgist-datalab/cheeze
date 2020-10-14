@@ -219,9 +219,15 @@ module_param_cb(enabled, &enable_param_ops, &enable, 0644);
 #endif
 
 void shm_init() {
+#ifdef IS_IN_VM
+	page_addr[0] = phys_to_virt(SHM_ADDR0);
+	page_addr[1] = phys_to_virt(SHM_ADDR1);
+	page_addr[2] = phys_to_virt(SHM_ADDR2);
+#else
 	page_addr[0] = ioremap_nocache(SHM_ADDR0, HP_SIZE);
 	page_addr[1] = ioremap_nocache(SHM_ADDR1, HP_SIZE);
 	page_addr[2] = ioremap_nocache(SHM_ADDR2, HP_SIZE);
+#endif
 	shm_meta_init(page_addr[0]);
 	shm_data_init(page_addr);
 	shm_task = kthread_run(shm_kthread, NULL, "kshm");

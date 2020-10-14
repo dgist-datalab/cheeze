@@ -26,6 +26,8 @@
 #define REQS_OFF (SEQ_OFF + SEQ_SIZE)
 #define REQS_SIZE (CHEEZE_QUEUE_SIZE * sizeof(struct cheeze_req_user))
 
+// #define IS_IN_VM // Change below SHM_ADDRn accordingly!
+
 #define SHM_ADDR0 0x800000000
 #define SHM_ADDR1 0x840000000
 #define SHM_ADDR2 0x880000000
