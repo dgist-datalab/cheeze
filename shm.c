@@ -91,6 +91,7 @@ int send_req (struct cheeze_req *req, int id, uint64_t seq) {
 	pr_debug("%s: id = %d, seq = %llu\n", __func__, id, seq);
 	/* memory barrier XXX:Arm */
 	//*send = *send | (1ULL << (id % BITS_PER_EVENT));
+	barrier();
 	*send = 1;
 	/* memory barrier XXX:Arm */
 	return 0;
@@ -112,6 +113,7 @@ static void recv_req (void) {
 			ureq_print(req->user);
 			do_request(req);
 				/* memory barrier XXX:Arm */
+			barrier();
 			*recv = 0;
 			/* memory barrier XXX:Arm */
 		}
