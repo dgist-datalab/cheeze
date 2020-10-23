@@ -77,7 +77,10 @@ static void do_request(struct cheeze_req *req)
 		req->ret = cheeze_do_request(req);
 	else
 		req->ret = 0;
-	complete(&req->acked);
+
+	blk_mq_end_request(req->rq, req->ret < 0 ? BLK_STS_IOERR : BLK_STS_OK);
+	cheeze_move_pop(req->id);
+	//complete(&req->acked);
 }
 
 int send_req (struct cheeze_req *req, int id, uint64_t seq) {

@@ -74,6 +74,7 @@ struct cheeze_req {
 	struct cheeze_req_user user;
 	struct completion acked;
 	struct cheeze_queue_item *item;
+	int id;
 } __attribute__((aligned(8), packed));
 
 // blk.c

@@ -72,10 +72,12 @@ static int do_request(struct request *rq)
 
 	send_req(req, id, seq);
 
-	wait_for_completion(&req->acked);
+	//wait_for_completion(&req->acked);
 
-	ret = req->ret;
-	cheeze_move_pop(id);
+	//ret = req->ret;
+	req->id = id;
+	ret = 0;
+	//cheeze_move_pop(id);
 
 	return ret;
 }
@@ -93,7 +95,7 @@ static blk_status_t queue_rq(struct blk_mq_hw_ctx *hctx,
 	ret = do_request(rq);
 
 	/* Stop request serving procedure */
-	blk_mq_end_request(rq, ret < 0 ? BLK_STS_IOERR : BLK_STS_OK);
+	//blk_mq_end_request(rq, ret < 0 ? BLK_STS_IOERR : BLK_STS_OK);
 
 	return ret;
 }
@@ -203,7 +205,7 @@ static int create_device(void)
 		goto out;
 	}
 
-	cheeze_disk->queue = blk_mq_init_sq_queue(&tag_set, &mq_ops, 128, BLK_MQ_F_SHOULD_MERGE | BLK_MQ_F_SG_MERGE);
+	cheeze_disk->queue = blk_mq_init_sq_queue(&tag_set, &mq_ops, 1024, BLK_MQ_F_SHOULD_MERGE | BLK_MQ_F_SG_MERGE);
 	if (!cheeze_disk->queue) {
 		pr_err("%s %d: Error allocating disk queue for device\n",
 		       __func__, __LINE__);
@@ -311,8 +313,8 @@ static int __init cheeze_init(void)
 		goto nomem;
 	}
 	cheeze_queue_init();
-	for (i = 0; i < CHEEZE_QUEUE_SIZE; i++)
-		init_completion(&reqs[i].acked);
+	//for (i = 0; i < CHEEZE_QUEUE_SIZE; i++)
+	//	init_completion(&reqs[i].acked);
 
 	return 0;
 
