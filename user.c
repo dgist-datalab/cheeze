@@ -15,7 +15,7 @@
 #include <unistd.h>
 #include <time.h>
 
-#define PHYS_ADDR 0x800000000
+#define PHYS_ADDR 0x3ec0000000
 #define CHEEZE_QUEUE_SIZE 1024
 #define CHEEZE_BUF_SIZE (2ULL * 1024 * 1024)
 #define ITEMS_PER_HP ((1ULL * 1024 * 1024 * 1024) / CHEEZE_BUF_SIZE)
@@ -86,7 +86,7 @@ struct cheeze_req_user {
 	unsigned int len;
 } __attribute__((aligned(8), packed));
 
-#define COPY_TARGET "/tmp/dev"
+#define COPY_TARGET "/dev/hugepages/disk"
 
 static inline char *get_buf_addr(char **pdata_addr, int id) {
 	int idx = id / ITEMS_PER_HP;
@@ -94,16 +94,11 @@ static inline char *get_buf_addr(char **pdata_addr, int id) {
 }
 
 static void shm_meta_init(void *ppage_addr) {
-	memset(ppage_addr, 0, (1ULL * 1024 * 1024 * 1024));
+	//memset(ppage_addr, 0, (1ULL * 1024 * 1024 * 1024));
 	send_event_addr = ppage_addr + SEND_OFF; // CHEEZE_QUEUE_SIZE ==> 16B
 	recv_event_addr = ppage_addr + RECV_OFF; // 16B
 	seq_addr = ppage_addr + SEQ_OFF; // 8KB
 	ureq_addr = ppage_addr + REQS_OFF; // sizeof(req) * 1024
-}
-
-static void shm_data_init(void *ppage_addr) {
-	data_addr[0] = ((char *)ppage_addr) + (1ULL * 1024 * 1024 * 1024);
-	data_addr[1] = ((char *)ppage_addr) + (2ULL * 1024 * 1024 * 1024);
 }
 
 #if 0
@@ -183,8 +178,9 @@ int main() {
 	char *buf, *page_buf;
 
 	mem_init();
-	shm_meta_init(page_addr);
-	shm_data_init(page_addr);
+	shm_meta_init(((char*)page_addr) + (2ULL * 1024 * 1024 * 1024));
+	data_addr[0] = ((char *)page_addr) + (1ULL * 1024 * 1024 * 1024);
+	data_addr[1] = ((char *)page_addr);
 
 	copyfd = open(COPY_TARGET, O_RDWR);
 	if (copyfd < 0) {
@@ -206,10 +202,11 @@ int main() {
 			recv = &recv_event_addr[i];
 			if (*send) {
 				id = i;
-				// printf("id: %d (i: %d, j: %d), seq_addr[id]: %lu, seq: %lu\n", id, i, j, seq_addr[id], seq);
+				// printf("id: %d, seq_addr[id]: %lu, seq: %lu\n", id, seq_addr[id], seq);
 				ureq = ureq_addr + id;
 				// ureq_print(ureq);
-				if (seq_addr[id] == seq) {
+
+				// if (seq_addr[id] == seq) {
 					buf = mem + (ureq->pos * 4096ULL);
 					page_buf = get_buf_addr(data_addr, id);
 					switch (ureq->op) {
@@ -226,9 +223,9 @@ int main() {
 					seq++;
 					*send = 0;
 					*recv = 1;
-				} else {
-					continue;
-				}
+				// } else {
+				// 	continue;
+				// }
 			}
 		}
 	}
