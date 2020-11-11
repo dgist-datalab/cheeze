@@ -15,6 +15,8 @@
 #include <unistd.h>
 #include <time.h>
 
+#include "crc32c.c"
+
 #define PHYS_ADDR 0x3ec0000000
 #define CHEEZE_QUEUE_SIZE 1024
 #define CHEEZE_BUF_SIZE (2ULL * 1024 * 1024)
@@ -84,6 +86,7 @@ struct cheeze_req_user {
 	int op;
 	unsigned int pos; // sector_t
 	unsigned int len;
+	uint32_t crc;
 } __attribute__((aligned(8), packed));
 
 #define COPY_TARGET "/dev/hugepages/disk"
@@ -211,13 +214,16 @@ int main() {
 					page_buf = get_buf_addr(data_addr, id);
 					switch (ureq->op) {
 						case REQ_OP_READ:
+							ureq->crc = crc32c(0, buf, ureq->len);
 							memcpy(page_buf, buf, ureq->len);
 							break;
 						case REQ_OP_WRITE:
 							memcpy(buf, page_buf, ureq->len);
+							ureq->crc = crc32c(0, buf, ureq->len);
 							break;
 						case REQ_OP_DISCARD:
 							memset(buf, 0, ureq->len);
+							ureq->crc = 0;
 							break;
 					}
 					seq++;

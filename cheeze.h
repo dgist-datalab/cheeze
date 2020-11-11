@@ -56,6 +56,7 @@ struct cheeze_req_user {
 	int op;
 	unsigned int pos; // sector_t but divided by 4096
 	unsigned int len;
+	uint32_t crc; // Unused from the kernel
 } __attribute__((aligned(8), packed));
 
 #ifdef __KERNEL__
