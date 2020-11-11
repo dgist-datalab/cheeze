@@ -37,6 +37,8 @@
 #define REQS_OFF (SEQ_OFF + SEQ_SIZE)
 #define REQS_SIZE (CHEEZE_QUEUE_SIZE * sizeof(struct cheeze_req))
 
+#define barrier() __asm__ __volatile__("": : :"memory")
+
 #define ureq_print(u) \
 	do { \
 		printf("%s:%d\n    id=%d\n    op=%d\n    pos=%u\n    len=%u\n", __func__, __LINE__, u->id, u->op, u->pos, u->len); \
@@ -237,7 +239,9 @@ int main() {
 							break;
 					}
 					seq++;
+					barrier();
 					*send = 0;
+					barrier();
 					*recv = 1;
 				// } else {
 				// 	continue;
