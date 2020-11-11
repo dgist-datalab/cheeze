@@ -90,6 +90,7 @@ struct cheeze_req_user {
 } __attribute__((aligned(8), packed));
 
 #define COPY_TARGET "/dev/hugepages/disk"
+#define TRACE_TARGET "/trace"
 
 static inline char *get_buf_addr(char **pdata_addr, int id) {
 	int idx = id / ITEMS_PER_HP;
@@ -173,7 +174,7 @@ static void mem_init()
 }
 
 int main() {
-	int copyfd;
+	int copyfd, dumpfd;
 	char *mem;
 	uint8_t *send, *recv;
 	int i, id;
@@ -199,6 +200,12 @@ int main() {
 
 	close(copyfd);
 
+	dumpfd = open(TRACE_TARGET, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+	if (dumpfd < 0) {
+		perror("Failed to open " TRACE_TARGET);
+		return 1;
+	}
+
 	while (1) {
 		for (i = 0; i < CHEEZE_QUEUE_SIZE; i++) {
 			send = &send_event_addr[i];
@@ -216,14 +223,17 @@ int main() {
 						case REQ_OP_READ:
 							ureq->crc = crc32c(0, buf, ureq->len);
 							memcpy(page_buf, buf, ureq->len);
+							write(dumpfd, ureq, sizeof(*ureq));
 							break;
 						case REQ_OP_WRITE:
 							memcpy(buf, page_buf, ureq->len);
 							ureq->crc = crc32c(0, buf, ureq->len);
+							write(dumpfd, ureq, sizeof(*ureq));
 							break;
 						case REQ_OP_DISCARD:
 							memset(buf, 0, ureq->len);
 							ureq->crc = 0;
+							write(dumpfd, ureq, sizeof(*ureq));
 							break;
 					}
 					seq++;
@@ -235,6 +245,8 @@ int main() {
 			}
 		}
 	}
+
+	close(dumpfd);
 
 	return 0;
 }
