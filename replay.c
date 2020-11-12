@@ -13,13 +13,14 @@ struct cheeze_req_user {
 	int op;
 	unsigned int pos; // sector_t
 	unsigned int len;
-	uint32_t crc;
 } __attribute__((aligned(8), packed));
 
 #define TRACE_TARGET "/trace"
 
 int main() {
 	int dumpfd;
+	unsigned int i;
+	uint32_t crc;
 	struct cheeze_req_user ureq;
 
 	dumpfd = open(TRACE_TARGET, O_RDONLY);
@@ -29,7 +30,15 @@ int main() {
 	}
 
 	while (read(dumpfd, &ureq, sizeof(ureq)) == sizeof(ureq)) {
-		printf("id=%d\n    op=%d\n    pos=%u\n    len=%u\n    crc=0x%x\n\n", ureq.id, ureq.op, ureq.pos, ureq.len, ureq.crc);
+		printf("id=%d\n    op=%d\n    pos=%u\n    len=%u\n\n", ureq.id, ureq.op, ureq.pos, ureq.len);
+		if (ureq.len) {
+			printf("    crc {\n");
+			for (i = 0; i < ureq.len; i += 4096) {
+				read(dumpfd, &crc, sizeof(crc));
+				printf("        0x%x,\n", crc);
+			}
+			printf("    }\n");
+		}
 	}
 
 	close(dumpfd);

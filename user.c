@@ -88,7 +88,6 @@ struct cheeze_req_user {
 	int op;
 	unsigned int pos; // sector_t
 	unsigned int len;
-	uint32_t crc;
 } __attribute__((aligned(8), packed));
 
 #define COPY_TARGET "/dev/hugepages/disk"
@@ -180,6 +179,8 @@ int main() {
 	char *mem;
 	uint8_t *send, *recv;
 	int i, id;
+	unsigned int j;
+	uint32_t crc;
 	struct cheeze_req_user *ureq;
 	char *buf, *page_buf;
 
@@ -223,19 +224,28 @@ int main() {
 					page_buf = get_buf_addr(data_addr, id);
 					switch (ureq->op) {
 						case REQ_OP_READ:
-							ureq->crc = crc32c(0, buf, ureq->len);
-							memcpy(page_buf, buf, ureq->len);
 							write(dumpfd, ureq, sizeof(*ureq));
+							for (j = 0; j < ureq->len; j += 4096) {
+								crc = crc32c(0, buf + j, 4096);
+								write(dumpfd, &crc, sizeof(crc));
+							}
+							memcpy(page_buf, buf, ureq->len);
 							break;
 						case REQ_OP_WRITE:
 							memcpy(buf, page_buf, ureq->len);
-							ureq->crc = crc32c(0, buf, ureq->len);
 							write(dumpfd, ureq, sizeof(*ureq));
+							for (j = 0; j < ureq->len; j += 4096) {
+								crc = crc32c(0, buf + j, 4096);
+								write(dumpfd, &crc, sizeof(crc));
+							}
 							break;
 						case REQ_OP_DISCARD:
 							memset(buf, 0, ureq->len);
-							ureq->crc = 0;
 							write(dumpfd, ureq, sizeof(*ureq));
+							for (j = 0; j < ureq->len; j += 4096) {
+								crc = 0;
+								write(dumpfd, &crc, sizeof(crc));
+							}
 							break;
 					}
 					seq++;
