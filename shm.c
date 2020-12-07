@@ -27,6 +27,9 @@ static struct task_struct *shm_task = NULL;
 static void shm_meta_init(void *ppage_addr);
 static void shm_data_init(void **ppage_addr);
 
+static unsigned long delay_us;
+module_param(delay_us, ulong, 0644);
+
 int cheeze_do_request(struct cheeze_req *req)
 {
 	unsigned long b_len = 0;
@@ -35,6 +38,9 @@ int cheeze_do_request(struct cheeze_req *req)
 	loff_t off = 0;
 	void *bbuf, *ubuf;
 	struct request *rq;
+
+	if (delay_us)
+		udelay(delay_us);
 
 	rq = req->rq;
 	ubuf = get_buf_addr(req->user.id);
