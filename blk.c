@@ -151,40 +151,6 @@ static const struct attribute_group cheeze_disk_attr_group = {
 	.attrs = cheeze_disk_attrs,
 };
 
-#ifndef blk_mq_init_sq_queue
-/*
- * Helper for setting up a queue with mq ops, given queue depth, and
- * the passed in mq ops flags.
- */
-static struct request_queue *blk_mq_init_sq_queue(struct blk_mq_tag_set *set,
-                                          const struct blk_mq_ops *ops,
-                                          unsigned int queue_depth,
-                                          unsigned int set_flags)
-{
-       struct request_queue *q;
-       int ret;
-
-       memset(set, 0, sizeof(*set));
-       set->ops = ops;
-       set->nr_hw_queues = 1;
-       set->queue_depth = queue_depth;
-       set->numa_node = NUMA_NO_NODE;
-       set->flags = set_flags;
-
-       ret = blk_mq_alloc_tag_set(set);
-       if (ret)
-               return ERR_PTR(ret);
-
-       q = blk_mq_init_queue(set);
-       if (IS_ERR(q)) {
-               blk_mq_free_tag_set(set);
-               return q;
-       }
-
-       return q;
-}
-#endif
-
 static int create_device(void)
 {
 	int ret;
@@ -198,7 +164,7 @@ static int create_device(void)
 		goto out;
 	}
 
-	cheeze_disk->queue = blk_mq_init_sq_queue(&tag_set, &mq_ops, 128, BLK_MQ_F_SHOULD_MERGE | BLK_MQ_F_SG_MERGE);
+	cheeze_disk->queue = blk_mq_init_sq_queue(&tag_set, &mq_ops, 128, BLK_MQ_F_SHOULD_MERGE);
 	if (!cheeze_disk->queue) {
 		pr_err("%s %d: Error allocating disk queue for device\n",
 		       __func__, __LINE__);
@@ -229,7 +195,7 @@ static int create_device(void)
 
 	// Set discard capability
 	cheeze_disk->queue->limits.discard_granularity = PAGE_SIZE;
-	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, cheeze_disk->queue);
+	blk_queue_flag_set(QUEUE_FLAG_DISCARD, cheeze_disk->queue);
 	blk_queue_max_discard_sectors(cheeze_disk->queue, 4096); // 512 * 4096 = 2MiB
 	blk_queue_max_write_zeroes_sectors(cheeze_disk->queue, 4096); // 512 * 4096 = 2MiB
 
@@ -246,8 +212,8 @@ static int create_device(void)
 	}
 
 	/* cheeze devices sort of resembles non-rotational disks */
-	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, cheeze_disk->queue);
-	queue_flag_clear_unlocked(QUEUE_FLAG_ADD_RANDOM, cheeze_disk->queue);
+	blk_queue_flag_set(QUEUE_FLAG_NONROT, cheeze_disk->queue);
+	blk_queue_flag_clear(QUEUE_FLAG_ADD_RANDOM, cheeze_disk->queue);
 
 out:
 	return ret;

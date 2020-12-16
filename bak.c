@@ -16,8 +16,6 @@
 #include <time.h>
 #include <sys/uio.h>
 
-#include <liburing.h>
-
 enum req_opf {
 	/* read sectors from the device */
 	REQ_OP_READ = 0,
@@ -58,7 +56,6 @@ struct cheeze_req_user {
 
 #define COPY_TARGET "/tmp/vdb"
 #define STRIPE_SIZE (4 * 1024)
-#define QUEUE_DEPTH 1
 
 // Warning, output is static so this function is not reentrant
 static const char *humanSize(uint64_t bytes)
@@ -103,31 +100,15 @@ static inline uint64_t ts_to_ns(struct timespec *ts)
 
 #define POS (req.pos * 4096UL)
 
-static void *ptr_align(void const *ptr, size_t alignment)
-{
-	char const *p0 = ptr;
-	char const *p1 = p0 + alignment - 1;
-	return (void *) (p1 - (size_t) p1 % alignment);
-}
-
-#ifndef PAGE_SIZE
-#define PAGE_SIZE 4096
-#endif
-
-static char __tmpbuf[2 * 1024 * 1024 + PAGE_SIZE];
-static char *tmpbuf = __tmpbuf;
 int main()
 {
-	int ret, i, j;
-	int chrfd, copyfd[2];
+	int chrfd;
+	int copyfd[2];
+	char *mem1, mem2;
 	ssize_t r;
 	struct cheeze_req_user req;
-	unsigned int stripe_pos, spr_n = 0, lspr_s;
-
-	struct io_uring ring[2];
-	struct io_uring_sqe *sqe[2];
-	struct io_uring_cqe *cqe[2];
-	ssize_t pos[2], moving_pos[2];
+	char *tmpbuf = malloc(2 * 1024 * 1024);
+	unsigned int stripe_pos, spr_n = 0, lspr_s, i;
 
 	chrfd = open("/dev/cheeze_chr", O_RDWR);
 	if (chrfd < 0) {
@@ -143,13 +124,6 @@ int main()
 			exit(1);
 		}
 	}
-
-	/* Initialize io_uring */
-	for (i = 0; i < 2; i++) {
-		io_uring_queue_init(QUEUE_DEPTH, &ring[i], 0);
-	}
-
-	tmpbuf = ptr_align(tmpbuf, PAGE_SIZE);
 
 	while (1) {
 		r = read(chrfd, &req, sizeof(struct cheeze_req_user));
@@ -176,69 +150,40 @@ int main()
 		if (lspr_s)
 			printf("%u %u\n", spr_n, lspr_s);
 
-		pos[0] = (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 1 : 0)) * STRIPE_SIZE;
-		pos[1] = (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 0 : 0)) * STRIPE_SIZE;
-		moving_pos[0] = pos[0];
-		moving_pos[1] = pos[1];
+		printf("  Seeking vda to to %lu\n", (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 1 : 0)) * STRIPE_SIZE);
+		r = lseek(copyfd[0], (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 1 : 0)) * STRIPE_SIZE, SEEK_SET);
+		if (r < 0)
+			perror("Failed to seek - 1");
+		printf("  Seeking vdb to to %lu\n", (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 0 : 0)) * STRIPE_SIZE);
+		r = lseek(copyfd[1], (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 0 : 0)) * STRIPE_SIZE, SEEK_SET);
+		if (r < 0)
+			perror("Failed to seek - 2");
 
 		if (req.op == REQ_OP_READ) {
 			for (i = 0; i < spr_n; i++) {
-				j = (i + stripe_pos) % 2;
-
-				sqe[j] = io_uring_get_sqe(&ring[j]);
-				if (!sqe[j]) {
-					perror("Could not get SQE");
-					return 1;
+				r = read(copyfd[(i + stripe_pos) % 2],
+					 tmpbuf + (i * STRIPE_SIZE),
+					 STRIPE_SIZE);
+				if (r != STRIPE_SIZE) {
+					perror("Failed to R/W - 1");
+					break;
 				}
-
-				io_uring_prep_read(sqe[j], copyfd[j], tmpbuf + (i * STRIPE_SIZE), STRIPE_SIZE, moving_pos[j]);
-				moving_pos[j] += STRIPE_SIZE;
-			//}
-			//for (i = 0; i < 2; i++) {
-				io_uring_submit(&ring[j]);
-
-				ret = io_uring_wait_cqe(&ring[j], &cqe[j]);
-				if (ret < 0) {
-					perror("io_uring_wait_cqe");
-					return 1;
-				}
-				if (cqe[j]->res < 0) {
-					fprintf(stderr, "io_uring(%s:%d) failed: %s\n", __FILE__, __LINE__, strerror(cqe[j]->res * -1));
-					return 1;
-				}
-				io_uring_cqe_seen(&ring[j], cqe[j]);
 			}
 		}
+
 pass:
 		req.buf = tmpbuf;
 		write(chrfd, &req, sizeof(struct cheeze_req_user));
 
 		if (req.op == REQ_OP_WRITE) {
 			for (i = 0; i < spr_n; i++) {
-				j = (i + stripe_pos) % 2;
-				
-				sqe[j] = io_uring_get_sqe(&ring[j]);
-				if (!sqe[j]) {
-					perror("Could not get SQE");
-					return 1;
+				r = write(copyfd[(i + stripe_pos) % 2],
+					  tmpbuf + (i * STRIPE_SIZE),
+					  STRIPE_SIZE);
+				if (r != STRIPE_SIZE) {
+					perror("Failed to R/W - 1");
+					break;
 				}
-				
-				io_uring_prep_write(sqe[j], copyfd[j], tmpbuf + (i * STRIPE_SIZE), STRIPE_SIZE, moving_pos[j]);
-				moving_pos[j] += STRIPE_SIZE;
-			//}
-			//for (i = 0; i < 2; i++) {
-				io_uring_submit(&ring[j]);
-				// Synchronous writes
-				ret = io_uring_wait_cqe(&ring[j], &cqe[j]);
-				if (ret < 0) {
-					perror("io_uring_wait_cqe");
-					return 1;
-				}
-				if (cqe[j]->res < 0) {
-					fprintf(stderr, "io_uring(%s:%d) failed: %s\n", __FILE__, __LINE__, strerror(cqe[j]->res * -1));
-					return 1;
-				}
-				io_uring_cqe_seen(&ring[j], cqe[j]);
 			}
 		}
 	}
