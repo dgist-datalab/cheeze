@@ -56,9 +56,9 @@ struct cheeze_req_user {
 	char *buf;
 	unsigned int pos;	// sector_t
 	unsigned int len;
-} __attribute__ ((aligned(8), packed));
+} __attribute__((aligned(8), packed));
 
-#define STRIPE_SIZE (4 * 1024)
+#define STRIPE_SIZE (128 * 1024)
 #define QUEUE_DEPTH (32 * 2 * 1024 * 1024 / 4096)
 
 // Warning, output is static so this function is not reentrant
@@ -108,7 +108,7 @@ static void *ptr_align(void const *ptr, size_t alignment)
 {
 	char const *p0 = ptr;
 	char const *p1 = p0 + alignment - 1;
-	return (void *) (p1 - (size_t) p1 % alignment);
+	return (void *)(p1 - (size_t)p1 % alignment);
 }
 
 #ifndef PAGE_SIZE
@@ -119,11 +119,11 @@ static char __tmpbuf[2 * 1024 * 1024 + PAGE_SIZE];
 static char *tmpbuf = __tmpbuf;
 int main()
 {
-	int ret, i, j;
+	int ret;
 	int chrfd, copyfd[2];
 	ssize_t r;
 	struct cheeze_req_user req;
-	unsigned int stripe_pos, spr_n = 0, lspr_s;
+	unsigned int stripe_in, i, j, loop;
 
 	struct io_uring ring;
 	struct io_uring_sqe *sqe[QUEUE_DEPTH];
@@ -137,8 +137,8 @@ int main()
 		return 1;
 	}
 
-	copyfd[0] = open("/dev/hugepages/vda", O_RDWR);
-	copyfd[1] = open("/dev/hugepages/vdb", O_RDWR);
+	copyfd[0] = open("/tmp/vda", O_RDWR);
+	copyfd[1] = open("/tmp/vdb", O_RDWR);
 	for (i = 0; i < 2; i++) {
 		if (copyfd[i] < 0) {
 			perror("Failed to open file");
@@ -156,8 +156,6 @@ int main()
 		if (r < 0)
 			break;
 
-		stripe_pos = POS / STRIPE_SIZE;
-
 		if (req.op != REQ_OP_READ && req.op != REQ_OP_WRITE) {
 			write(chrfd, &req, sizeof(struct cheeze_req_user));
 			continue;
@@ -170,16 +168,10 @@ int main()
 				req.id, req.pos, req.len);
 */
 
-		if (req.len % 4096)
-			printf("Unaligned: %u\n", req.len % 4096);
+		stripe_in = POS / STRIPE_SIZE;
 
-		spr_n = req.len / STRIPE_SIZE;
-		lspr_s = req.len % STRIPE_SIZE;
-		if (lspr_s)
-			printf("%u %u\n", spr_n, lspr_s);
-
-		pos[0] = (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 1 : 0)) * STRIPE_SIZE;
-		pos[1] = (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 0 : 0)) * STRIPE_SIZE;
+		pos[0] = ((stripe_in / 2 + (stripe_in % 2 ? 1 : 0)) * STRIPE_SIZE) + (POS - stripe_in * STRIPE_SIZE) * (stripe_in % 2 ? 0 : 1);
+		pos[1] = (stripe_in / 2 * STRIPE_SIZE) + (POS - stripe_in * STRIPE_SIZE) * (stripe_in % 2 ? 1 : 0);
 		moving_pos[0] = pos[0];
 		moving_pos[1] = pos[1];
 
@@ -188,8 +180,9 @@ int main()
 		if (req.op == REQ_OP_WRITE)
 			write(chrfd, &req, sizeof(struct cheeze_req_user));
 
-		for (i = 0; i < spr_n; i++) {
-			j = (i + stripe_pos) % 2;
+		loop = req.len / 4096;
+		for (i = 0; i < loop; i++) {
+			j = ((POS + i * 4096) / STRIPE_SIZE) % 2;
 
 			sqe[i] = io_uring_get_sqe(&ring);
 			if (unlikely(!sqe[i])) {
@@ -198,20 +191,24 @@ int main()
 			}
 
 			if (req.op == REQ_OP_READ)
-				io_uring_prep_read(sqe[i], copyfd[j], tmpbuf + (i * STRIPE_SIZE), STRIPE_SIZE, moving_pos[j]);
+				io_uring_prep_read(sqe[i], copyfd[j],
+						   tmpbuf + (i * 4096), 4096,
+						   moving_pos[j]);
 			else
-				io_uring_prep_write(sqe[i], copyfd[j], tmpbuf + (i * STRIPE_SIZE), STRIPE_SIZE, moving_pos[j]);
-			moving_pos[j] += STRIPE_SIZE;
+				io_uring_prep_write(sqe[i], copyfd[j],
+						    tmpbuf + (i * 4096), 4096,
+						    moving_pos[j]);
+			moving_pos[j] += 4096;
 		}
 		ret = io_uring_submit(&ring);
 
 		// Blocking
-		ret = io_uring_wait_cqe_nr(&ring, &cqe, spr_n);
+		ret = io_uring_wait_cqe_nr(&ring, &cqe, loop);
 		if (unlikely(ret != 0)) {
 			fprintf(stderr, "io_uring(%s:%d) failed: %d(%s)\n", __FILE__, __LINE__, ret, strerror(ret * -1));
 			return 1;
 		}
-		for (i = 0; i < spr_n; i++) {
+		for (i = 0; i < loop; i++) {
 			do {
 				ret = io_uring_peek_cqe(&ring, &cqe);
 				if (unlikely(ret != 0)) {
