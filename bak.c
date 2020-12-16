@@ -135,11 +135,12 @@ int main()
 		if (req.op != REQ_OP_READ && req.op != REQ_OP_WRITE)
 			goto pass;
 
+/*
 		printf("req[%d]\n"
 			"  pos=%d\n"
 			"  len=%d\n",
 				req.id, req.pos, req.len);
-
+*/
 		// req.buf = mem1 + (POS);
 
 		if (req.len % 4096)
@@ -150,11 +151,11 @@ int main()
 		if (lspr_s)
 			printf("%u %u\n", spr_n, lspr_s);
 
-		printf("  Seeking vda to to %lu\n", (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 1 : 0)) * STRIPE_SIZE);
+//		printf("  Seeking vda to to %lu\n", (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 1 : 0)) * STRIPE_SIZE);
 		r = lseek(copyfd[0], (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 1 : 0)) * STRIPE_SIZE, SEEK_SET);
 		if (r < 0)
 			perror("Failed to seek - 1");
-		printf("  Seeking vdb to to %lu\n", (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 0 : 0)) * STRIPE_SIZE);
+//		printf("  Seeking vdb to to %lu\n", (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 0 : 0)) * STRIPE_SIZE);
 		r = lseek(copyfd[1], (POS / 2 / STRIPE_SIZE + (stripe_pos % 2 ? 0 : 0)) * STRIPE_SIZE, SEEK_SET);
 		if (r < 0)
 			perror("Failed to seek - 2");
