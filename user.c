@@ -16,11 +16,9 @@
 #include <time.h>
 #include <sys/uio.h>
 
-#include <pthread.h>
 #include <liburing.h>
 
 #define unlikely(x)     __builtin_expect(!!(x), 0)
-#define barrier() __asm__ __volatile__("": : :"memory")
 
 enum req_opf {
 	/* read sectors from the device */
@@ -63,7 +61,6 @@ struct cheeze_req_user {
 #define COPY_TARGET "/tmp/vdb"
 #define STRIPE_SIZE (4 * 1024)
 #define QUEUE_DEPTH (32 * 2 * 1024 * 1024 / 4096)
-#define QUEUE_SIZE 1024
 
 // Warning, output is static so this function is not reentrant
 static const char *humanSize(uint64_t bytes)
@@ -106,7 +103,7 @@ static inline uint64_t ts_to_ns(struct timespec *ts)
 	return ts->tv_sec * (uint64_t) 1000000000L + ts->tv_nsec;
 }
 
-#define POS (req->pos * 4096UL)
+#define POS (req.pos * 4096UL)
 
 static void *ptr_align(void const *ptr, size_t alignment)
 {
@@ -119,57 +116,21 @@ static void *ptr_align(void const *ptr, size_t alignment)
 #define PAGE_SIZE 4096
 #endif
 
-static int chrfd;
-static struct io_uring ring;
-static void *ack(void *unused) {
-	struct cheeze_req_user *req;
-	struct io_uring_cqe *cqe;
-	int ret;
-	
-	while (1) {
-		// Blocking
-		//printf("%s:%d\n", __func__, __LINE__);
-		ret = io_uring_wait_cqe(&ring, &cqe);
-		//printf("%s:%d\n", __func__, __LINE__);
-		if (unlikely(ret != 0)) {
-			fprintf(stderr, "io_uring(%s:%d) failed: %d(%s)\n", __FILE__, __LINE__, ret, strerror(ret * -1));
-			continue;
-		}
-		if (unlikely(cqe->res < 0)) {
-			fprintf(stderr, "io_uring(%s:%d) failed: %s\n", __FILE__, __LINE__, strerror(cqe->res * -1));
-			continue;
-		}
-
-		req = io_uring_cqe_get_data(cqe);
-		if (req) {
-			//printf("%s:%d++\n", __func__, __LINE__);
-			if (req->op == REQ_OP_READ)
-				write(chrfd, req, sizeof(struct cheeze_req_user));
-			req->len = 0; // Reserved detection
-			//printf("%s:%d--\n", __func__, __LINE__);
-		}
-		
-		io_uring_cqe_seen(&ring, cqe);
-	}
-	
-	return NULL;
-}
-
 static char __tmpbuf[2 * 1024 * 1024 + PAGE_SIZE];
 static char *tmpbuf = __tmpbuf;
 int main()
 {
-	int i, j, last_op = -1,index = 0;
-	int copyfd[2];
+	int ret, i, j;
+	int chrfd, copyfd[2];
 	ssize_t r;
-	struct cheeze_req_user reqarr[QUEUE_SIZE], *req;
+	struct cheeze_req_user req;
 	unsigned int stripe_pos, spr_n = 0, lspr_s;
 
+	struct io_uring ring;
 	struct io_uring_sqe *sqe[QUEUE_DEPTH];
 	struct io_uring_cqe *cqe;
+
 	ssize_t pos[2], moving_pos[2];
-	pthread_t ack_thread;
-	int ack_thread_id;
 
 	chrfd = open("/dev/cheeze_chr", O_RDWR);
 	if (chrfd < 0) {
@@ -190,54 +151,31 @@ int main()
 	io_uring_queue_init(QUEUE_DEPTH, &ring, 0);
 
 	tmpbuf = ptr_align(tmpbuf, PAGE_SIZE);
-	
-	ack_thread_id = pthread_create(&ack_thread, NULL, ack, NULL);
-	if (ack_thread_id < 0) {
-		perror("pthread");
-		exit(0);
-	}
 
-	memset(reqarr, 0, sizeof(reqarr));
 	while (1) {
-		do {
-			// Find free slot
-			index = (index + 1) % QUEUE_SIZE;
-			req = reqarr + index;
-			// printf("reqarr[%d] = %p\n", index, req);
-		} while (req->len);
-		
-		r = read(chrfd, req, sizeof(struct cheeze_req_user));
+		r = read(chrfd, &req, sizeof(struct cheeze_req_user));
 		if (r < 0)
 			break;
 
 		stripe_pos = POS / STRIPE_SIZE;
 
-		if (req->op != REQ_OP_READ && req->op != REQ_OP_WRITE) {
-			write(chrfd, req, sizeof(struct cheeze_req_user));
-			req->len = 0;
+		if (req.op != REQ_OP_READ && req.op != REQ_OP_WRITE) {
+			write(chrfd, &req, sizeof(struct cheeze_req_user));
 			continue;
-		}
-		
-		if (last_op != req->op) {
-			last_op = req->op;
-			while (io_uring_peek_cqe(&ring, &cqe) == 0) {
-				usleep(100 * 1000);
-				printf("Waiting for all previous I/Os to finish\n");
-			}
 		}
 
 /*
 		printf("req[%d]\n"
 			"  pos=%d\n"
 			"  len=%d\n",
-				req->id, req->pos, req->len);
+				req.id, req.pos, req.len);
 */
 
-		if (req->len % 4096)
-			printf("Unaligned: %u\n", req->len % 4096);
+		if (req.len % 4096)
+			printf("Unaligned: %u\n", req.len % 4096);
 
-		spr_n = req->len / STRIPE_SIZE;
-		lspr_s = req->len % STRIPE_SIZE;
+		spr_n = req.len / STRIPE_SIZE;
+		lspr_s = req.len % STRIPE_SIZE;
 		if (lspr_s)
 			printf("%u %u\n", spr_n, lspr_s);
 
@@ -246,10 +184,10 @@ int main()
 		moving_pos[0] = pos[0];
 		moving_pos[1] = pos[1];
 
-		req->buf = tmpbuf;
+		req.buf = tmpbuf;
 
-		if (req->op == REQ_OP_WRITE)
-			write(chrfd, req, sizeof(struct cheeze_req_user));
+		if (req.op == REQ_OP_WRITE)
+			write(chrfd, &req, sizeof(struct cheeze_req_user));
 
 		for (i = 0; i < spr_n; i++) {
 			j = (i + stripe_pos) % 2;
@@ -260,15 +198,37 @@ int main()
 				return 1;
 			}
 
-			if (req->op == REQ_OP_READ)
+			if (req.op == REQ_OP_READ)
 				io_uring_prep_read(sqe[i], copyfd[j], tmpbuf + (i * STRIPE_SIZE), STRIPE_SIZE, moving_pos[j]);
 			else
 				io_uring_prep_write(sqe[i], copyfd[j], tmpbuf + (i * STRIPE_SIZE), STRIPE_SIZE, moving_pos[j]);
 			moving_pos[j] += STRIPE_SIZE;
 		}
-		io_uring_sqe_set_data(sqe[spr_n - 1], req);
-		io_uring_submit(&ring);
-		//printf("%s:%d\n", __func__, __LINE__);
+		ret = io_uring_submit(&ring);
+
+		// Blocking
+		ret = io_uring_wait_cqe_nr(&ring, &cqe, spr_n);
+		if (unlikely(ret != 0)) {
+			fprintf(stderr, "io_uring(%s:%d) failed: %d(%s)\n", __FILE__, __LINE__, ret, strerror(ret * -1));
+			return 1;
+		}
+		for (i = 0; i < spr_n; i++) {
+			do {
+				ret = io_uring_peek_cqe(&ring, &cqe);
+				if (unlikely(ret != 0)) {
+					fprintf(stderr, "io_uring(%s:%d) failed: %d(%s)\n", __FILE__, __LINE__, ret, strerror(ret * -1));
+					//return 1;
+				}
+			} while (ret != 0);
+			if (unlikely(cqe->res < 0)) {
+				fprintf(stderr, "io_uring(%s:%d) failed: %s\n", __FILE__, __LINE__, strerror(cqe->res * -1));
+				return 1;
+			}
+			io_uring_cqe_seen(&ring, cqe);
+		}
+
+		if (req.op == REQ_OP_READ)
+			write(chrfd, &req, sizeof(struct cheeze_req_user));
 	}
 
 	return 0;
