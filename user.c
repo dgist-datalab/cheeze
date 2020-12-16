@@ -58,7 +58,6 @@ struct cheeze_req_user {
 	unsigned int len;
 } __attribute__ ((aligned(8), packed));
 
-#define COPY_TARGET "/tmp/vdb"
 #define STRIPE_SIZE (4 * 1024)
 #define QUEUE_DEPTH (32 * 2 * 1024 * 1024 / 4096)
 
@@ -138,8 +137,8 @@ int main()
 		return 1;
 	}
 
-	copyfd[0] = open("/tmp/vda", O_RDWR);
-	copyfd[1] = open("/tmp/vdb", O_RDWR);
+	copyfd[0] = open("/dev/hugepages/vda", O_RDWR);
+	copyfd[1] = open("/dev/hugepages/vdb", O_RDWR);
 	for (i = 0; i < 2; i++) {
 		if (copyfd[i] < 0) {
 			perror("Failed to open file");
@@ -220,10 +219,12 @@ int main()
 					//return 1;
 				}
 			} while (ret != 0);
+			/*
 			if (unlikely(cqe->res < 0)) {
 				fprintf(stderr, "io_uring(%s:%d) failed: %s\n", __FILE__, __LINE__, strerror(cqe->res * -1));
 				return 1;
 			}
+			*/
 			io_uring_cqe_seen(&ring, cqe);
 		}
 
