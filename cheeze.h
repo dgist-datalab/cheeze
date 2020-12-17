@@ -29,12 +29,14 @@
 #endif
 
 struct cheeze_req_user {
+	// Aligned to 32B
 	int id;
 	int op;
 	char *buf;
 	unsigned int pos; // sector_t but divided by 4096
 	unsigned int len;
-} __attribute__((aligned(8), packed));
+	unsigned int pad[2];
+};
 
 #ifdef __KERNEL__
 
