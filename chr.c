@@ -3,6 +3,8 @@
  * Copyright (C) 2020 Park Ju Hyung
  */
 
+#define DEBUG
+
 #define pr_fmt(fmt) "cheeze_chr: " fmt
 
 #include <linux/delay.h>
@@ -46,7 +48,8 @@ static int do_request(struct cheeze_req *req)
 		/* Get pointer to the data */
 		b_buf = page_address(bvec.bv_page) + bvec.bv_offset;
 
-		pr_debug("off: %lld, len: %ld, dest_buf: %px, user_buf: %px\n", off, b_len, b_buf, req->user.buf);
+		pr_debug("off: %lld, len: %ld, dest_buf: %lu(%lu), user_buf: %px\n", off, b_len, (unsigned long)b_buf, ((unsigned long)b_buf) / 4096, req->user.buf);
+		//pr_debug("off: %lld, len: %ld, dest_buf: %px, user_buf: %px\n", off, b_len, b_buf, req->user.buf);
 
 		switch (req->user.op) {
 		case REQ_OP_WRITE:

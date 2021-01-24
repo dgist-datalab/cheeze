@@ -3,6 +3,7 @@
  * Copyright (C) 2020 Park Ju Hyung
  */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -14,9 +15,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <time.h>
-#include <sys/uio.h>
-
-#include <liburing.h>
 
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 
@@ -60,9 +58,6 @@ struct cheeze_req_user {
 	unsigned int pad[2];
 };
 
-#define STRIPE_SIZE (128 * 1024)
-#define QUEUE_DEPTH (32 * 2 * 1024 * 1024 / 4096)
-
 // Warning, output is static so this function is not reentrant
 static const char *humanSize(uint64_t bytes)
 {
@@ -73,6 +68,7 @@ static const char *humanSize(uint64_t bytes)
 
 	int i = 0;
 	double dblBytes = bytes;
+
 	if (bytes > 1024) {
 		for (i = 0; (bytes / 1024) > 0 && i < length - 1;
 		     i++, bytes /= 1024)
@@ -99,39 +95,15 @@ static off_t fdlength(int fd)
 	return ret;
 }
 
-static inline uint64_t ts_to_ns(struct timespec *ts)
-{
-	return ts->tv_sec * (uint64_t) 1000000000L + ts->tv_nsec;
+static inline uint64_t ts_to_ns(struct timespec* ts) {
+	return ts->tv_sec * (uint64_t)1000000000L + ts->tv_nsec;
 }
 
-#define POS (req.pos * 4096UL)
-
-static void *ptr_align(void const *ptr, size_t alignment)
-{
-	char const *p0 = ptr;
-	char const *p1 = p0 + alignment - 1;
-	return (void *)(p1 - (size_t)p1 % alignment);
-}
-
-#ifndef PAGE_SIZE
-#define PAGE_SIZE 4096
-#endif
-
-static char __tmpbuf[2 * 1024 * 1024 + PAGE_SIZE];
-static char *tmpbuf = __tmpbuf;
-int main()
-{
-	int ret;
-	int chrfd, copyfd[2];
+int main(int argc, char *argv[]) {
+	int chrfd, copyfd;
+	char *mem;
 	ssize_t r;
 	struct cheeze_req_user req;
-	unsigned int stripe_in, i, j, loop;
-
-	struct io_uring ring;
-	struct io_uring_sqe *sqe[QUEUE_DEPTH];
-	struct io_uring_cqe *cqe;
-
-	ssize_t pos[2], moving_pos[2];
 
 	chrfd = open("/dev/cheeze_chr", O_RDWR);
 	if (chrfd < 0) {
@@ -139,96 +111,46 @@ int main()
 		return 1;
 	}
 
-	copyfd[0] = open("/tmp/vda", O_RDWR);
-	copyfd[1] = open("/tmp/vdb", O_RDWR);
-	for (i = 0; i < 2; i++) {
-		if (copyfd[i] < 0) {
-			perror("Failed to open file");
-			exit(1);
-		}
+	copyfd = open(argv[1], O_RDWR);
+	if (copyfd < 0) {
+		fprintf(stderr, "Failed to open %s: %s\n", argv[1], strerror(errno));
+		return 1;
 	}
 
-	/* Initialize io_uring */
-	io_uring_queue_init(QUEUE_DEPTH, &ring, 0);
+	mem = mmap(NULL, fdlength(copyfd), PROT_READ | PROT_WRITE, MAP_SHARED, copyfd, 0);
+	if (mem == MAP_FAILED) {
+		perror("Failed to mmap copy path");
+		return 1;
+	}
 
-	tmpbuf = ptr_align(tmpbuf, PAGE_SIZE);
+	close(copyfd);
 
 	while (1) {
 		r = read(chrfd, &req, sizeof(struct cheeze_req_user));
 		if (r < 0)
 			break;
 
-		if (req.op != REQ_OP_READ && req.op != REQ_OP_WRITE) {
-			write(chrfd, &req, sizeof(struct cheeze_req_user));
-			continue;
-		}
+		req.buf = mem + (req.pos * 4096UL);
 
 /*
 		printf("req[%d]\n"
-			"  pos=%d\n"
-			"  len=%d\n",
-				req.id, req.pos, req.len);
+			"  pos=%u\n"
+			"  len=%u\n"
+			"mem=%p\n"
+			"  pos=%p\n",
+				req.id, req.pos, req.len, mem, req.buf);
 */
 
-		stripe_in = POS / STRIPE_SIZE;
-
-		pos[0] = ((stripe_in / 2 + (stripe_in % 2 ? 1 : 0)) * STRIPE_SIZE) + (POS - stripe_in * STRIPE_SIZE) * (stripe_in % 2 ? 0 : 1);
-		pos[1] = (stripe_in / 2 * STRIPE_SIZE) + (POS - stripe_in * STRIPE_SIZE) * (stripe_in % 2 ? 1 : 0);
-		moving_pos[0] = pos[0];
-		moving_pos[1] = pos[1];
-
-		req.buf = tmpbuf;
-
-		if (req.op == REQ_OP_WRITE)
-			write(chrfd, &req, sizeof(struct cheeze_req_user));
-
-		loop = req.len / 4096;
-		for (i = 0; i < loop; i++) {
-			j = ((POS + i * 4096) / STRIPE_SIZE) % 2;
-
-			sqe[i] = io_uring_get_sqe(&ring);
-			if (unlikely(!sqe[i])) {
-				perror("Could not get SQE");
-				return 1;
-			}
-
-			if (req.op == REQ_OP_READ)
-				io_uring_prep_read(sqe[i], copyfd[j],
-						   tmpbuf + (i * 4096), 4096,
-						   moving_pos[j]);
-			else
-				io_uring_prep_write(sqe[i], copyfd[j],
-						    tmpbuf + (i * 4096), 4096,
-						    moving_pos[j]);
-			moving_pos[j] += 4096;
-		}
-		ret = io_uring_submit(&ring);
-
-		// Blocking
-		ret = io_uring_wait_cqe_nr(&ring, &cqe, loop);
-		if (unlikely(ret != 0)) {
-			fprintf(stderr, "io_uring(%s:%d) failed: %d(%s)\n", __FILE__, __LINE__, ret, strerror(ret * -1));
-			return 1;
-		}
-		for (i = 0; i < loop; i++) {
-			do {
-				ret = io_uring_peek_cqe(&ring, &cqe);
-				if (unlikely(ret != 0)) {
-					fprintf(stderr, "io_uring(%s:%d) failed: %d(%s)\n", __FILE__, __LINE__, ret, strerror(ret * -1));
-					//return 1;
-				}
-			} while (ret != 0);
-			/*
-			if (unlikely(cqe->res < 0)) {
-				fprintf(stderr, "io_uring(%s:%d) failed: %s\n", __FILE__, __LINE__, strerror(cqe->res * -1));
-				return 1;
-			}
-			*/
-			io_uring_cqe_seen(&ring, cqe);
+		if (req.op == REQ_OP_DISCARD) {
+			printf("Trimming offset %s", humanSize(req.pos * 4096UL));
+			printf(" with length %s\n", humanSize(req.len));
+			memset(req.buf, 0, req.len);
 		}
 
-		if (req.op == REQ_OP_READ)
-			write(chrfd, &req, sizeof(struct cheeze_req_user));
+		// Sanity check
+		// memset(req.buf, 0, req.size);
+
+		write(chrfd, &req, sizeof(struct cheeze_req_user));
 	}
 
 	return 0;
