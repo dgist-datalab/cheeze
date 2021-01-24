@@ -3,6 +3,8 @@
  * Copyright (C) 2020 Park Ju Hyung
  */
 
+#define DEBUG
+
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/semaphore.h>
@@ -20,9 +22,27 @@ static struct semaphore slots, items;
 static struct list_head free_tag_list, processing_tag_list; 
 static spinlock_t queue_spin;
 
-
 // Protect with lock
 struct cheeze_req *reqs = NULL;
+
+static phys_addr_t get_addr(struct request *rq)
+{
+	phys_addr_t ret = 0;
+	struct bio_vec bvec;
+	struct req_iterator iter;
+
+	/* Iterate over all requests segments */
+	rq_for_each_segment(bvec, rq, iter) {
+		if (!ret) {
+			ret = page_to_phys(bvec.bv_page) + bvec.bv_offset;
+			pr_debug("%s: %llu\n", __func__, ret);
+		} else {
+			WARN_ON(1);
+		}
+	}
+
+	return ret;
+}
 
 // Lock must be held and freed before and after push()
 int cheeze_push(struct request *rq) {
@@ -81,6 +101,10 @@ int cheeze_push(struct request *rq) {
 	req->user.pos = (blk_rq_pos(rq) << SECTOR_SHIFT) >> CHEEZE_LOGICAL_BLOCK_SHIFT;
 	req->user.len = blk_rq_bytes(rq);
 	req->user.id = id;
+	if (is_rw)
+		req->user.kaddr = get_addr(rq);
+	else
+		req->user.kaddr = 0;
 	reinit_completion(&req->acked);
 	req->item = item;
 

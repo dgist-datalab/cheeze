@@ -49,13 +49,12 @@ enum req_opf {
 };
 
 struct cheeze_req_user {
-	// Aligned to 32B
 	int id;
 	int op;
 	char *buf;
 	unsigned int pos;	// sector_t
 	unsigned int len;
-	unsigned int pad[2];
+	long long unsigned int kaddr;
 };
 
 // Warning, output is static so this function is not reentrant
@@ -99,6 +98,34 @@ static inline uint64_t ts_to_ns(struct timespec* ts) {
 	return ts->tv_sec * (uint64_t)1000000000L + ts->tv_nsec;
 }
 
+#define PHYS_ADDR 0x0
+#define TOTAL_SIZE (8 * 1024L * 1024L * 1024L) // 4 GB
+
+static void *phys_mem;
+
+static void mem_init()
+{
+	uint64_t pagesize, addr, len;
+	int fd;
+
+	fd = open("/dev/mem", O_RDWR);
+	if (fd == -1) {
+		perror("Failed to open /dev/mem");
+		exit(1);
+	}
+
+	pagesize = getpagesize();
+	addr = PHYS_ADDR & (~(pagesize - 1));
+	len = (PHYS_ADDR & (pagesize - 1)) + TOTAL_SIZE;
+	phys_mem = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, addr);
+	if (phys_mem == MAP_FAILED) {
+		perror("Failed to mmap plain device path");
+		exit(1);
+	}
+
+	close(fd);
+}
+
 int main(int argc, char *argv[]) {
 	int chrfd, copyfd;
 	char *mem;
@@ -123,6 +150,8 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	mem_init();
+
 	close(copyfd);
 
 	while (1) {
@@ -132,19 +161,25 @@ int main(int argc, char *argv[]) {
 
 		req.buf = mem + (req.pos * 4096UL);
 
-/*
 		printf("req[%d]\n"
 			"  pos=%u\n"
 			"  len=%u\n"
-			"mem=%p\n"
+			"  kaddr=%llu\n"
 			"  pos=%p\n",
-				req.id, req.pos, req.len, mem, req.buf);
-*/
+				req.id, req.pos, req.len, req.kaddr, req.buf);
 
-		if (req.op == REQ_OP_DISCARD) {
+		switch (req.op) {
+		case REQ_OP_DISCARD:
 			printf("Trimming offset %s", humanSize(req.pos * 4096UL));
 			printf(" with length %s\n", humanSize(req.len));
 			memset(req.buf, 0, req.len);
+			break;
+		case REQ_OP_READ:
+			memcpy(phys_mem + req.kaddr, req.buf, req.len);
+			break;
+		case REQ_OP_WRITE:
+			memcpy(req.buf, phys_mem + req.kaddr, req.len);
+			break;
 		}
 
 		// Sanity check
