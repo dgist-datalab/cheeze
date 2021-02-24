@@ -107,13 +107,6 @@ static ssize_t cheeze_chr_read(struct file *filp, char *buf, size_t count,
 		return -ERESTARTSYS;
 	}
 
-	pr_debug("read: req[%d]\n"
-		"  buf=%px\n"
-		"  kaddr=%llu\n"
-		"  pos=%u\n"
-		"  len=%u\n",
-			req->user.id, req->user.buf, req->user.kaddr, req->user.pos, req->user.len);
-
 	if (unlikely(copy_to_user(buf, &req->user, count))) {
 		pr_err("%s: copy_to_user() failed\n", __func__);
 		return -EFAULT;
@@ -141,18 +134,17 @@ static ssize_t cheeze_chr_write(struct file *file, const char __user *buf,
 
 	pr_debug("write: req[%d]\n"
 		"  buf=%px\n"
-		"  kaddr=%llu\n"
 		"  pos=%u\n"
 		"  len=%u\n",
-			ureq.id, ureq.buf, ureq.kaddr, ureq.pos, ureq.len);
+			ureq.id, ureq.buf, ureq.pos, ureq.len);
 
 	req = reqs + ureq.id;
 	req->user.buf = ureq.buf;
 
 	// Process bio
-//	if (likely(req->is_rw))
-//		req->ret = do_request(req);
-//	else
+	if (likely(req->is_rw))
+		req->ret = do_request(req);
+	else
 		req->ret = 0;
 
 	complete(&req->acked);

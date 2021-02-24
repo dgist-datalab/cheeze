@@ -35,7 +35,7 @@ struct cheeze_req_user {
 	char *buf;
 	unsigned int pos; // sector_t but divided by 4096
 	unsigned int len;
-	long long unsigned int kaddr;
+	unsigned int pad[2];
 };
 
 #ifdef __KERNEL__

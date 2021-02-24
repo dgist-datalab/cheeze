@@ -164,7 +164,7 @@ static int create_device(void)
 		goto out;
 	}
 
-	cheeze_disk->queue = blk_mq_init_sq_queue(&tag_set, &mq_ops, 1, BLK_MQ_F_SHOULD_MERGE);
+	cheeze_disk->queue = blk_mq_init_sq_queue(&tag_set, &mq_ops, 1024, BLK_MQ_F_SHOULD_MERGE);
 	if (!cheeze_disk->queue) {
 		pr_err("%s %d: Error allocating disk queue for device\n",
 		       __func__, __LINE__);
@@ -192,7 +192,7 @@ static int create_device(void)
 				     CHEEZE_LOGICAL_BLOCK_SIZE);
 	blk_queue_io_min(cheeze_disk->queue, PAGE_SIZE);
 	blk_queue_io_opt(cheeze_disk->queue, PAGE_SIZE);
-	blk_queue_max_hw_sectors(cheeze_disk->queue, PAGE_SIZE / SECTOR_SIZE);
+	blk_queue_max_hw_sectors(cheeze_disk->queue, 4096); // 512 * 4096 = 2MiB
 
 	// Set discard capability
 	cheeze_disk->queue->limits.discard_granularity = PAGE_SIZE;
