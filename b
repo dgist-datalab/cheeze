@@ -1,4 +1,4 @@
 #!/bin/bash
 
-#gcc -O2 -g -Wall -fsanitize=address -static-libasan user.c
-gcc -O3 -s -Wall user.c
+gcc -O2 -g -Wall -fsanitize=address -static-libasan user.c -luring
+#gcc -O3 -s -Wall user.c
